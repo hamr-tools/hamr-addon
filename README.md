@@ -23,7 +23,7 @@ If the AddOns list says it's out of date after a patch, tick "Load out of date A
 ## Using it
 
 Click the crossed hammers by the minimap (drag them round the edge to move them), or type `/hamr`. On retail
-it's also in the minimap's addon menu. The window has three tabs:
+it's also in the minimap's addon menu. The window has four tabs:
 
 - **Raid list**: who's in your raid or party. Copy it (Ctrl+C) and paste it into the event's list on the site.
   Refresh reads the group again.
@@ -31,6 +31,17 @@ it's also in the minimap's addon menu. The window has three tabs:
   "Compare with the game" on the site's Tallies page to see where the notes and the site disagree.
 - **Update notes**: paste the totals from the site ("Copy for the addon" on an event, or "Copy all" on Tallies)
   and press Check. Each note that needs changing is shown as before -> after with its own Save button.
+
+- **Onboarding**: welcoming a recruit. When a recruit whispers you, they're listed on the left with their race
+  (orange when they're not a dwarf); guild members are hidden unless "Show guild members" is ticked. Or press "Use
+  my target". The list, and what you've sent to whom, are kept across reloads for a week. Each message (greeting, history, Discord,
+  next steps) has its own Whisper button, which turns into a checkmark once sent. "Tell guild" warns the guild a
+  recruit is coming (tick "It's an alt" for a different message), and then "Guild invite" lights up. The messages start as Lorem ipsum placeholders: write the clan's own. Edit any
+  message and it's kept; `{name}` becomes their name and `{me}` yours.
+
+When you update notes from an event's export, the addon records the event as done, by you, and tells the other
+officers' addons in the guild; an addon that logs in later asks for what it missed. Checking the same event again
+says who did it and when (running it again is always safe). `/hamr done` lists the recent ones.
 
 Saving is careful:
 
@@ -49,5 +60,7 @@ While the window is open, "Show offline members" is on so everyone is listed; cl
 
 - `/hamr`: open or close the window
 - `/hamr raid`, `/hamr roster`, `/hamr notes`: open a tab
+- `/hamr welcome`: open the Onboarding tab
+- `/hamr done`: which events' notes were updated, and by whom
 - `/hamr minimap`: hide or show the minimap button
 - `/hamr help`: list these

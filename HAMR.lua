@@ -6,7 +6,8 @@ local MAX_NOTE = 31
 -- Exports say which game they came from, so the site won't match retail names against Forever's guild or the other way.
 local GAME = (WOW_PROJECT_ID and WOW_PROJECT_MAINLINE and WOW_PROJECT_ID == WOW_PROJECT_MAINLINE) and "retail" or "forever"
 local GAME_LABEL = GAME == "retail" and "Retail" or "Forever"
-local ADDON_NAME = ... or "HAMR"
+local ADDON_NAME, ns = ...
+ADDON_NAME, ns = ADDON_NAME or "HAMR", ns or {}      -- ns is shared with the addon's other files (Onboarding.lua)
 local ICON = "Interface\\AddOns\\" .. ADDON_NAME .. "\\icon"
 local KINDS = { { key = "cta", label = "CTA", pattern = "[Cc][Tt][Aa]" }, { key = "hw", label = "HW", pattern = "[Hh][Ww]" } }
 
@@ -210,10 +211,13 @@ end
 local textScroll = CreateFrame("ScrollFrame", "HAMRTextScroll", frame, "UIPanelScrollFrameTemplate")
 textScroll:SetPoint("TOPLEFT", 24, -132)
 textScroll:SetPoint("BOTTOMRIGHT", -44, 54)
-local textBack = frame:CreateTexture(nil, "BACKGROUND", nil, 1)       -- a darker well, so it reads as a box to type in
-textBack:SetPoint("TOPLEFT", textScroll, "TOPLEFT", -6, 6)
-textBack:SetPoint("BOTTOMRIGHT", textScroll, "BOTTOMRIGHT", 26, -6)
-textBack:SetColorTexture(0, 0, 0, 0.35)
+local function well(scroll)        -- a darker well behind a scrolling area, so it reads as a box; hides with it
+  local back = scroll:CreateTexture(nil, "BACKGROUND")
+  back:SetPoint("TOPLEFT", scroll, "TOPLEFT", -6, 6)
+  back:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", 26, -6)
+  back:SetColorTexture(0, 0, 0, 0.35)
+end
+well(textScroll)
 local edit = CreateFrame("EditBox", nil, textScroll)
 edit:SetMultiLine(true)
 edit:SetAutoFocus(false)
@@ -228,14 +232,15 @@ textScroll:SetScript("OnMouseDown", function() edit:SetFocus() end)
 local listScroll = CreateFrame("ScrollFrame", "HAMRListScroll", frame, "UIPanelScrollFrameTemplate")
 listScroll:SetPoint("TOPLEFT", 24, -132)
 listScroll:SetPoint("BOTTOMRIGHT", -44, 54)
+well(listScroll)
 local list = CreateFrame("Frame", nil, listScroll)
 list:SetSize(510, 10)
 listScroll:SetScrollChild(list)
 local rows = {}
 
--- Tabs: plain buttons with a gold line under the open one.
-local TABS = { { key = "raid", label = "Raid list" }, { key = "roster", label = "Guild notes" }, { key = "notes", label = "Update notes" } }
-local tabButtons, currentTab, view = {}, nil, 0
+-- Tabs: plain buttons with a gold line under the open one. Other files add theirs with ns.addTab.
+local tabButtons, tabCount, currentTab, view = {}, 0, nil, 0
+ns.panels, ns.tabs = {}, {}         -- frames hidden whenever a tab opens; {key = function that opens it}
 
 local function tabLook(b, selected)
   b.label:SetFontObject(selected and GameFontHighlight or GameFontNormal)
@@ -243,10 +248,11 @@ local function tabLook(b, selected)
   if selected then b.line:Show() else b.line:Hide() end
 end
 
-for i, t in ipairs(TABS) do
+function ns.addTab(key, label, run)
+  tabCount = tabCount + 1
   local b = CreateFrame("Button", nil, frame)
-  b:SetSize(140, 26)
-  b:SetPoint("BOTTOMLEFT", divider, "TOPLEFT", (i - 1) * 144, 0)
+  b:SetSize(132, 26)
+  b:SetPoint("BOTTOMLEFT", divider, "TOPLEFT", (tabCount - 1) * 136, 0)
   b.back = b:CreateTexture(nil, "BACKGROUND")
   b.back:SetAllPoints()
   local glow = b:CreateTexture(nil, "HIGHLIGHT")
@@ -259,10 +265,13 @@ for i, t in ipairs(TABS) do
   b.line:SetColorTexture(1, 0.82, 0, 1)
   b.label = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   b.label:SetPoint("CENTER", 0, 1)
-  b.label:SetText(t.label)
-  b.key = t.key
-  tabButtons[t.key] = b
+  b.label:SetText(label)
+  b.key = key
+  b:SetScript("OnClick", function() ns.showTab(key) end)
+  tabButtons[key] = b
+  ns.tabs[key] = run
   tabLook(b, false)
+  return b
 end
 
 -- Opens a tab with a fresh screen. Returns a number that changes with every screen, so a roster that arrives after
@@ -273,6 +282,9 @@ local function open(key, hintText)
   currentTab = key
   for k, b in pairs(tabButtons) do tabLook(b, k == key) end
   hint:SetText(hintText)
+  textScroll:Hide()
+  listScroll:Hide()
+  for _, p in ipairs(ns.panels) do p:Hide() end
   action:Hide()
   action:SetScript("OnClick", nil)
   second:Hide()
@@ -388,6 +400,92 @@ local function drawItem(r, item)
   if item.state == "long" then r.button:Disable() else r.button:Enable() end
 end
 
+---------------------------------------------------------------------------------------------------------------------
+-- Which events' notes are done. An event's export from the site says which event it is; the first officer to save a
+-- note from it records that, and tells every other officer's addon in the guild. An addon that logs in later asks
+-- the others for what it missed. Running an event again is always safe; this only says it's been done.
+
+local PREFIX = "HAMR"
+
+local function db()
+  HAMRDB = type(HAMRDB) == "table" and HAMRDB or {}
+  return HAMRDB
+end
+
+local function applied()
+  local d = db()
+  d.applied = type(d.applied) == "table" and d.applied or {}
+  return d.applied
+end
+
+local function ago(at)
+  local s = math.max(0, now() - (at or 0))
+  if s < 90 then return "just now" end
+  if s < 5400 then return math.floor(s / 60 + 0.5) .. " min ago" end
+  if s < 129600 then return math.floor(s / 3600 + 0.5) .. " h ago" end
+  return math.floor(s / 86400 + 0.5) .. " days ago"
+end
+
+local function split(text)
+  local parts = {}
+  for part in (text .. "\t"):gmatch("(.-)\t") do parts[#parts + 1] = part end
+  return parts
+end
+
+local function sendAddon(message, channel, target)
+  local send = (C_ChatInfo and C_ChatInfo.SendAddonMessage) or SendAddonMessage
+  if send and IsInGuild() then pcall(send, PREFIX, message, channel, target) end      -- never worth an error
+end
+
+local function remember(game, id, at, by, title)
+  id, at = tonumber(id), tonumber(at) or 0
+  if not (game and id and by) then return end
+  local key = game .. ":" .. id
+  local old = applied()[key]
+  if old and old.at <= at then return end           -- keep the first officer who did it
+  applied()[key] = { game = game, id = id, at = at, by = by, title = title or "" }
+end
+
+local function wireRecord(r)
+  return table.concat({ "A", r.game, r.id, r.at, r.by, (r.title or ""):sub(1, 60) }, "\t")
+end
+
+local function markApplied(ev)
+  if not ev or ev.marked then return end
+  ev.marked = true
+  remember(GAME, ev.id, now(), UnitName("player") or "?", ev.title)
+  sendAddon(wireRecord(applied()[GAME .. ":" .. ev.id]), "GUILD")
+end
+
+local function recentApplied(limit)
+  local list = {}
+  for _, r in pairs(applied()) do if r.game == GAME then list[#list + 1] = r end end
+  table.sort(list, function(a, b) return a.at > b.at end)
+  while #list > limit do table.remove(list) end
+  return list
+end
+
+local comms = CreateFrame("Frame")
+comms:RegisterEvent("CHAT_MSG_ADDON")
+comms:SetScript("OnEvent", function(_, event, prefix, message, channel, sender)
+  if event ~= "CHAT_MSG_ADDON" or prefix ~= PREFIX or type(message) ~= "string" then return end
+  local p = split(message)
+  if p[1] == "A" then
+    remember(p[2], p[3], p[4], p[5], p[6])
+  elseif p[1] == "Q" and shortName(sender or "") ~= UnitName("player") then      -- someone just logged in
+    for _, r in ipairs(recentApplied(5)) do sendAddon(wireRecord(r), "WHISPER", sender) end
+  end
+end)
+
+function ns.startComms()
+  if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
+  elseif RegisterAddonMessagePrefix then RegisterAddonMessagePrefix(PREFIX) end
+  for key, r in pairs(applied()) do         -- forget events done more than 60 days ago
+    if type(r) ~= "table" or (now() - (r.at or 0)) > 60 * 86400 then applied()[key] = nil end
+  end
+  C_Timer.After(15, function() sendAddon("Q", "GUILD") end)
+end
+
 local checking = {}        -- notes sent to the game, waiting for its roster to show them: {item = row}
 
 local function save(r, item)
@@ -402,6 +500,7 @@ local function save(r, item)
   end
   if fresh.note == item.after then              -- a Retry, and the first one went through after all
     item.sending, item.unconfirmed, item.refused, item.saved = nil, nil, nil, true
+    markApplied(item.event)
     drawItem(r, item)
     return
   end
@@ -446,6 +545,7 @@ confirmSaves = function(giveUp)
     if notes[item.entry.name] == item.after then
       checking[item] = nil
       item.sending, item.saved = nil, true
+      markApplied(item.event)
       drawItem(r, item)
       status:SetText("Saved " .. item.entry.name .. ".")
     elseif giveUp == item then
@@ -505,6 +605,8 @@ local function readTotals(text)
     return
   end
   if not IsInGuild() then status:SetText(ORANGE .. "You're not in a guild.|r") return end
+  local eventId, eventTitle = lines[1]:match("event=(%d+)%s*(.-)$")
+  local ev = eventId and { id = tonumber(eventId), title = (eventTitle ~= "" and eventTitle) or ("event " .. eventId) } or nil
   setBusy("Checking against the guild roster")
   local asked = view
   withRoster(function()
@@ -525,7 +627,7 @@ local function readTotals(text)
       elseif name then
         local entry = find(name)
         if entry then
-          local item = { entry = entry, want = { cta = tonumber(cta), hw = tonumber(hw) } }
+          local item = { entry = entry, want = { cta = tonumber(cta), hw = tonumber(hw) }, event = ev }
           rank = trim(rank or "")
           if rank ~= "" and lower(rank) ~= lower(entry.rank) then
             item.rankNote = "Rank: " .. (entry.rank ~= "" and entry.rank or "none") .. " here, " .. rank .. " in the other game. Change it by hand if it should match."
@@ -546,6 +648,10 @@ local function readTotals(text)
     for _, item in ipairs(items) do if item.state == "info" then flags = flags + 1 else changes = changes + 1 end end
     local summary = changes .. " to change, " .. same .. " already right" .. (flags > 0 and (", " .. flags .. " to look at (nothing to save).") or ".")
     if #missing > 0 then summary = summary .. " Not in the guild: " .. table.concat(missing, ", ", 1, math.min(#missing, 8)) .. (#missing > 8 and "..." or "") end
+    local done = ev and applied()[GAME .. ":" .. ev.id]
+    if done then
+      summary = GOLD .. ev.title .. " was already done by " .. done.by .. ", " .. ago(done.at) .. ". Running it again is safe.|r\n" .. summary
+    end
     showNotes(items, summary)
   end)
 end
@@ -614,22 +720,23 @@ exportRoster = function()
 end
 
 importNotes = function()
-  showPaste("notes", "On the site, press \"Copy for the addon\" (on the event's page once it's published, or \"Copy all\" on Tallies), paste it here (Ctrl+V) and press Check.",
+  local last = recentApplied(1)[1]
+  showPaste("notes", "On the site, press \"Copy for the addon\" (on a published event, or \"Copy all\" on Tallies), paste it here (Ctrl+V) and press Check."
+            .. (last and ("\n" .. GREY .. "Last done: " .. last.title .. ", by " .. last.by .. ", " .. ago(last.at) .. ". /hamr done lists more.|r") or ""),
             "Check", readTotals)
 end
 
+ns.addTab("raid", "Raid list", function() exportRaid() end)
+ns.addTab("roster", "Guild notes", function() exportRoster() end)
+ns.addTab("notes", "Update notes", function() if lastNotes then showNotes(lastNotes, lastSummary) else importNotes() end end)
+
 local lastTab = "raid"
 local function showTab(key)
+  if not ns.tabs[key] then key = "raid" end
   lastTab = key
-  if key == "raid" then exportRaid()
-  elseif key == "roster" then exportRoster()
-  elseif lastNotes then showNotes(lastNotes, lastSummary)
-  else importNotes() end
+  ns.tabs[key]()
 end
-
-for key, b in pairs(tabButtons) do
-  b:SetScript("OnClick", function() showTab(key) end)
-end
+ns.showTab = showTab
 
 local function toggleWindow()
   if frame:IsShown() then frame:Hide() else showTab(lastTab) end
@@ -651,7 +758,7 @@ miniIcon:SetTexture(ICON)
 mini:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
 local function settings()
-  HAMRDB = type(HAMRDB) == "table" and HAMRDB or {}
+  db()
   HAMRDB.minimap = type(HAMRDB.minimap) == "table" and HAMRDB.minimap or {}
   if type(HAMRDB.minimap.angle) ~= "number" then HAMRDB.minimap.angle = 205 end      -- lower left, clear of the clock and mail
   return HAMRDB.minimap
@@ -698,6 +805,7 @@ loader:SetScript("OnEvent", function(self, event, name)
   self:UnregisterEvent("ADDON_LOADED")
   placeButton()
   if settings().hide then mini:Hide() else mini:Show() end
+  ns.startComms()
 end)
 
 function HAMR_OnAddonCompartmentClick()
@@ -714,12 +822,24 @@ SlashCmdList.HAMR = function(msg)
     local s = settings()
     s.hide = not s.hide
     if s.hide then mini:Hide(); say("Minimap button hidden. /hamr minimap brings it back.") else mini:Show() end
+  elseif command == "welcome" then showTab("welcome")
+  elseif command == "done" then
+    local list = recentApplied(10)
+    if #list == 0 then say("No event's notes recorded as done yet.") end
+    for _, r in ipairs(list) do say(r.title .. ": done by " .. r.by .. ", " .. ago(r.at)) end
   elseif command == "" then toggleWindow()
   else
     say("/hamr - open or close the window (or click the hammers by the minimap)")
     say("/hamr raid - copy who's in your raid or party, for an event's list")
     say("/hamr roster - copy everyone's tick notes, to check against the site")
     say("/hamr notes - paste the site's totals and save the notes that changed, one at a time")
+    say("/hamr welcome - welcome a new recruit: whispers, a word to the guild, the invite")
+    say("/hamr done - which events' notes have been updated, and by whom")
     say("/hamr minimap - hide or show the minimap button")
   end
 end
+
+-- What the addon's other files need from this one.
+ns.frame, ns.open, ns.status, ns.hint, ns.action, ns.second = frame, open, status, hint, action, second
+ns.say, ns.db, ns.now, ns.trim, ns.lower, ns.shortName = say, db, now, trim, lower, shortName
+ns.GAME, ns.ORANGE, ns.GREY, ns.GOLD, ns.GREEN = GAME, ORANGE, GREY, GOLD, GREEN
