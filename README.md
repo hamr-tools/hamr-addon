@@ -34,7 +34,10 @@ it's also in the minimap's addon menu. The window has four tabs:
 
 - **Onboarding**: welcoming a recruit. When a recruit whispers you, they're listed on the left with their race
   (orange when they're not a dwarf); guild members are hidden unless "Show guild members" is ticked. Or press "Use
-  my target". The list, and what you've sent to whom, are kept across reloads for a week. Each message (greeting, history, Discord,
+  my target". The list, and what you've sent to whom, are kept across reloads for a week. Each recruit ends
+  with an outcome: **Joined** is recorded by itself once someone you invited is in the guild roster; **Didn't
+  join** records a no; **Not a recruit** just takes someone off the list. Anyone you'd messaged who stays silent
+  for a week is recorded as having gone quiet. **History** (bottom right) lists the outcomes, ready to copy. Each message (greeting, history, Discord,
   next steps) has its own Whisper button, which turns into a checkmark once sent. "Tell guild" warns the guild a
   recruit is coming (tick "It's an alt" for a different message), and then "Guild invite" lights up. The messages start as Lorem ipsum placeholders: write the clan's own. Edit any
   message and it's kept; `{name}` becomes their name and `{me}` yours.

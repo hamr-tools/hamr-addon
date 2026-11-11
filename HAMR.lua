@@ -841,5 +841,6 @@ end
 
 -- What the addon's other files need from this one.
 ns.frame, ns.open, ns.status, ns.hint, ns.action, ns.second = frame, open, status, hint, action, second
+ns.showText = showText
 ns.say, ns.db, ns.now, ns.trim, ns.lower, ns.shortName = say, db, now, trim, lower, shortName
 ns.GAME, ns.ORANGE, ns.GREY, ns.GOLD, ns.GREEN = GAME, ORANGE, GREY, GOLD, GREEN

@@ -11,6 +11,8 @@ local CHECK = "|TInterface\\RaidFrame\\ReadyCheck-Ready:14:14|t "
 local SHOWN = 6                 -- rows in the list
 local KEEP = 20                 -- whisperers remembered
 local KEEP_DAYS = 7
+local HISTORY = 200             -- outcomes kept: joined, didn't join, went quiet
+local RESULTS = { joined = "Joined", declined = "Didn't join", quiet = "Went quiet" }
 
 -- Placeholders: the officers write the clan's own words, and they're kept.
 local MESSAGES = {
@@ -29,7 +31,8 @@ local function store()
   local w = type(d.welcome) == "table" and d.welcome or {}
   d.welcome = w
   w.texts = type(w.texts) == "table" and w.texts or {}
-  w.recent = type(w.recent) == "table" and w.recent or {}       -- whisperers, newest first: {name, guid, race, raceKey, at, sent, told, invited}
+  w.recent = type(w.recent) == "table" and w.recent or {}       -- whisperers, newest first: {name, guid, race, raceKey, first, at, sent, told, invited}
+  w.history = type(w.history) == "table" and w.history or {}     -- how each recruit turned out, newest first
   return w
 end
 
@@ -37,17 +40,37 @@ local function textFor(key, default) return store().texts[key] or default end
 
 local function recent() return store().recent end
 
+local focus             -- the recruit being talked to: one of recent()
+
+local function sentCount(p)
+  local n = 0
+  for _ in pairs(type(p.sent) == "table" and p.sent or {}) do n = n + 1 end
+  return n
+end
+
+-- Takes someone off the list. With a result, it goes in the history; without one (not a recruit), they're just gone.
+local function close(p, result)
+  local list = recent()
+  for i = #list, 1, -1 do if list[i] == p then table.remove(list, i) end end
+  if focus == p then focus = nil end
+  if not result then return end
+  local h = store().history
+  table.insert(h, 1, { name = p.name, race = p.race, first = p.first or p.at, at = ns.now(), result = result,
+                       by = UnitName("player") or "", sent = sentCount(p), told = p.told, invited = p.invited })
+  while #h > HISTORY do table.remove(h) end
+end
+
 local pruned = false
-local function prune()          -- once a session: forget anyone who whispered more than a week ago
+local function prune()          -- once a session: anyone silent for a week leaves the list; if we'd talked, they went quiet
   if pruned then return end
   pruned = true
   local list = recent()
   for i = #list, 1, -1 do
-    if type(list[i]) ~= "table" or (ns.now() - (list[i].at or 0)) > KEEP_DAYS * 86400 then table.remove(list, i) end
+    local p = list[i]
+    if type(p) ~= "table" then table.remove(list, i)
+    elseif (ns.now() - (p.at or 0)) > KEEP_DAYS * 86400 then close(p, (sentCount(p) > 0 or p.told) and "quiet" or nil) end
   end
 end
-
-local focus             -- the recruit being talked to: one of recent()
 
 local function firstName(name)
   local plain = (name or ""):match("^([^%-]+)") or name or ""
@@ -212,6 +235,14 @@ tell:SetPoint("LEFT", guildBox, "RIGHT", 6, 0)
 local invite = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 invite:SetSize(150, 24)
 invite:SetPoint("TOPLEFT", 166, -256)
+local declined = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+declined:SetSize(110, 24)
+declined:SetPoint("LEFT", invite, "RIGHT", 6, 0)
+declined:SetText("Didn't join")
+local notRecruit = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+notRecruit:SetSize(110, 24)
+notRecruit:SetPoint("LEFT", declined, "RIGHT", 6, 0)
+notRecruit:SetText("Not a recruit")
 
 local function guildKey() return alt:GetChecked() and "alt" or "new" end
 guildBox:SetScript("OnTextChanged", function(self, typed) if typed then store().texts["guild_" .. guildKey()] = self:GetText() end end)
@@ -226,9 +257,13 @@ end
 draw = function()
   prune()
   showGuild:SetChecked(store().showGuild == true)
-  local members, shown = guildNames(), {}
+  local members, shown, joined = guildNames(), {}, {}
   for _, p in ipairs(recent()) do
     p.member = inGuild(p, members)
+    if p.invited and p.member then joined[#joined + 1] = p end         -- invited, and now in the roster: they joined
+  end
+  for _, p in ipairs(joined) do close(p, "joined") end
+  for _, p in ipairs(recent()) do
     if (store().showGuild or not p.member) and #shown < SHOWN then shown[#shown + 1] = p end
   end
   local hidden = 0
@@ -262,6 +297,31 @@ draw = function()
   sentButton(tell, focus and focus.told, "Tell guild", "Told")
   invite:SetText(focus and focus.invited and (CHECK .. "Invited") or "Guild invite")
   if focus and focus.told and not focus.invited then invite:Enable() else invite:Disable() end      -- lights up once the guild knows
+  if focus then declined:Enable(); notRecruit:Enable() else declined:Disable(); notRecruit:Disable() end
+end
+
+declined:SetScript("OnClick", function()
+  if focus then ns.status:SetText(focus.name .. ": didn't join, in the history."); close(focus, "declined"); draw() end
+end)
+notRecruit:SetScript("OnClick", function()
+  if focus then ns.status:SetText(focus.name .. " is off the list."); close(focus, nil); draw() end
+end)
+
+local showWelcome
+local function historyText()
+  local lines = {}
+  for _, h in ipairs(store().history) do
+    local what = { RESULTS[h.result] or h.result }
+    if h.invited then what[#what + 1] = "invited" end
+    if h.sent and h.sent > 0 then what[#what + 1] = h.sent .. (h.sent == 1 and " message" or " messages") end
+    lines[#lines + 1] = date("%Y-%m-%d", h.at) .. "  " .. h.name .. (h.race and (" (" .. h.race .. ")") or "") .. "  " .. table.concat(what, ", ")
+                        .. (h.by ~= "" and ("  · " .. h.by) or "")
+  end
+  return #lines > 0 and table.concat(lines, "\n") or "Nobody yet. Recruits land here when they join, say no, or go quiet for a week."
+end
+
+local function showHistory()
+  ns.showText("welcome", "Recruits you've talked to, newest first. Press Ctrl+C to copy.", historyText(), "Back", function() showWelcome() end)
 end
 
 tell:SetScript("OnClick", function()
@@ -317,6 +377,7 @@ listener:SetScript("OnEvent", function(_, event, _, sender, ...)
       race, raceKey = r, key
     end
     local p = remember(sender, guid, race, raceKey)
+    p.first = p.first or p.at
     p.member = inGuild(p, guildNames())
     if not focus and not p.member then focus = p end       -- a recruit, not a clanmate saying hello
     if panel:IsShown() then draw() end
@@ -331,12 +392,17 @@ useTarget:SetScript("OnClick", function()
   local name = (GetUnitName and GetUnitName("target", true)) or UnitName("target")
   local race, raceKey = UnitRace("target")
   focus = remember(name, UnitGUID and UnitGUID("target"), race, raceKey)        -- picked on purpose: shown even if in the guild
+  focus.first = focus.first or focus.at
   draw()
 end)
 
-ns.addTab("welcome", "Onboarding", function()
+showWelcome = function()
   ns.open("welcome", "Welcome a recruit: when they whisper you, whisper what fits, tell the guild, then invite.\n"
           .. GREY .. "Edit any message and it's kept. {name} becomes their name, {me} yours.|r")
   panel:Show()
+  ns.second:SetText("History")
+  ns.second:SetScript("OnClick", showHistory)
+  ns.second:Show()
   draw()
-end)
+end
+ns.addTab("welcome", "Onboarding", function() showWelcome() end)
