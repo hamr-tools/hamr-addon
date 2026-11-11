@@ -139,6 +139,12 @@ frame:SetScript("OnDragStart", function(self) if not ns.locked then self:StartMo
 frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
 frame:SetBackdrop({ bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background", edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
                     tile = true, tileSize = 32, edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 } })
+-- The dialog background texture is see-through even at full strength, so a solid layer sits under it: at 100% in the
+-- options the window is fully opaque.
+local solid = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+solid:SetPoint("TOPLEFT", 11, -12)
+solid:SetPoint("BOTTOMRIGHT", -12, 11)
+solid:SetColorTexture(0.05, 0.05, 0.05, 1)
 frame:SetScript("OnHide", restoreOffline)
 frame:Hide()
 tinsert(UISpecialFrames, "HAMRFrame")       -- Escape closes it
@@ -832,6 +838,7 @@ local function applyOptions()
     frame:SetBackdropColor(1, 1, 1, o.opacity)
     frame:SetBackdropBorderColor(1, 1, 1, math.max(o.opacity, 0.5))     -- the border stays visible, so the window has an edge
   end
+  solid:SetAlpha(o.opacity * o.opacity)       -- solid at 100%, fading faster than the texture so low settings stay clear
   ns.locked = o.locked == true
   if settings().hide then mini:Hide() else mini:Show() end
 end
@@ -900,7 +907,7 @@ optCheck(-190, "Show the button by the minimap", function() return not settings(
 optCheck(-220, "Lock the window in place", function() return options().locked == true end, function(on) options().locked = on end)
 optCheck(-250, "Open on the tab I used last, even after logging out", function() return options().keepTab == true end, function(on) options().keepTab = on end)
 local resetPos = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
-resetPos:SetSize(200, 24)
+resetPos:SetSize(280, 24)
 resetPos:SetPoint("TOPLEFT", 20, -292)
 resetPos:SetText("Put the window back in the middle")
 resetPos:SetScript("OnClick", function()
