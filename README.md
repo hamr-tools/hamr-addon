@@ -35,6 +35,9 @@ Saving is careful:
 - Only the numbers after `CTA:` and `HW:` change; the rest of the note stays as the officers wrote it.
 - A note that's higher than the site, or isn't a tick note yet (an alt's), is flagged and needs a deliberate click.
 - A note someone changed after you pressed Check is never overwritten: the row refreshes instead.
+- A row only says Saved once the game's own roster shows the new note. If it doesn't show within a few
+  seconds, the row says so and offers Retry; if the game refuses or blocks it, the row says why.
+- Nothing is saved in combat.
 - Totals from the other game's site are refused.
 - Saving needs a guild rank that can edit public notes.
 

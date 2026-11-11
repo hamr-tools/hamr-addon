@@ -1,8 +1,8 @@
-## Interface: 16001, 11507, 110207, 120001
+## Interface: 16001, 11507, 110207, 120001, 120105
 ## Title: HAMR
 ## Notes: Copies the raid list and the guild tick notes for the HAMR Tools site, and saves its totals back into the notes.
 ## Author: Clan Battlehammer
-## Version: 0.2.0
+## Version: 0.2.1
 ## IconTexture: Interface\AddOns\HAMR\icon
 ## SavedVariables: HAMRDB
 ## AddonCompartmentFunc: HAMR_OnAddonCompartmentClick

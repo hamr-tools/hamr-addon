@@ -72,9 +72,14 @@ local function rosterEntries()
   return list
 end
 
-local pending
+local function askForRoster()
+  if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() elseif GuildRoster then GuildRoster() end
+end
+
+local pending, confirmSaves
 local waiter = CreateFrame("Frame")
 waiter:SetScript("OnEvent", function()
+  if confirmSaves then confirmSaves() end
   if pending then local run = pending; pending = nil; run() end
 end)
 waiter:RegisterEvent("GUILD_ROSTER_UPDATE")
@@ -84,7 +89,7 @@ local function withRoster(fn)
   if not IsInGuild() then say("You're not in a guild.") return end
   showOffline()
   pending = fn
-  if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() elseif GuildRoster then GuildRoster() end
+  askForRoster()
   C_Timer.After(2, function() if pending == fn then pending = nil; fn() end end)
 end
 
@@ -331,7 +336,7 @@ end
 ---------------------------------------------------------------------------------------------------------------------
 -- /hamr notes: the site's totals, checked against each note before anything is written.
 
-local ORANGE, GREY, GOLD = "|cffff9a2e", "|cff9d9d9d", "|cffffd100"
+local ORANGE, GREY, GOLD, GREEN = "|cffff9a2e", "|cff9d9d9d", "|cffffd100", "|cff4fd86a"
 
 local function judge(item)
   if item.info then item.state = "info" return end       -- something to look at, nothing to save
@@ -359,17 +364,31 @@ local function drawItem(r, item)
   if item.info then extra = extra .. "\n" .. ORANGE .. item.info .. "|r" end
   if item.rankNote then extra = extra .. "\n" .. GREY .. item.rankNote .. "|r" end
   if item.saved then
-    r.text:SetText(line .. "\n" .. GREY .. "Saved.|r")
+    r.text:SetText(line .. "\n" .. GREEN .. "Saved: the game's roster shows the new note.|r")
     r.button:SetText("Saved")
     r.button:Disable()
     return
+  elseif item.sending then
+    r.text:SetText(line .. "\n" .. GREY .. "Saving, waiting for the game to show it...|r")
+    r.button:SetText("Saving")
+    r.button:Disable()
+    return
+  elseif item.unconfirmed then
+    r.text:SetText(line .. "\n" .. ORANGE .. "Sent, but the game's roster doesn't show it yet. Retry, or check it in the guild window.|r")
+    r.button:Show()
+    r.button:SetText("Retry")
+    r.button:Enable()
+    return
   end
+  if item.refused then extra = extra .. "\n" .. ORANGE .. item.refused .. "|r" end
   r.text:SetText(line .. extra)
   if item.state == "info" then r.button:Hide() return end
   r.button:Show()
   r.button:SetText(item.button)
   if item.state == "long" then r.button:Disable() else r.button:Enable() end
 end
+
+local checking = {}        -- notes sent to the game, waiting for its roster to show them: {item = row}
 
 local function save(r, item)
   local fresh
@@ -379,6 +398,11 @@ local function save(r, item)
   if not fresh then
     r.text:SetText(GOLD .. item.entry.name .. "|r\n" .. ORANGE .. "Not in the guild any more.|r")
     r.button:Disable()
+    return
+  end
+  if fresh.note == item.after then              -- a Retry, and the first one went through after all
+    item.sending, item.unconfirmed, item.refused, item.saved = nil, nil, nil, true
+    drawItem(r, item)
     return
   end
   if fresh.note ~= item.entry.note then        -- someone else changed it since the check
@@ -392,11 +416,59 @@ local function save(r, item)
     status:SetText(ORANGE .. "Your guild rank can't edit public notes.|r")
     return
   end
-  writeNote(fresh, item.after)
-  item.entry.note, item.saved = item.after, true
+  if InCombatLockdown and InCombatLockdown() then
+    status:SetText(ORANGE .. "Notes can't be saved in combat. Try again once it's over.|r")
+    return
+  end
+  -- Saved only once the game's own roster shows the new note: that's the proof it was written.
+  item.sending, item.unconfirmed, item.refused = true, nil, nil
+  checking[item] = r
   drawItem(r, item)
-  status:SetText("Saved " .. item.entry.name .. ".")
+  local ok, err = pcall(writeNote, fresh, item.after)
+  if not ok then
+    checking[item], item.sending = nil, nil
+    item.refused = "The game refused the change: " .. tostring(err)
+    drawItem(r, item)
+    return
+  end
+  if not item.sending then return end           -- the game blocked it while we called (see blocked below)
+  status:SetText("Saving " .. item.entry.name .. "...")
+  askForRoster()
+  C_Timer.After(4, function() confirmSaves(item) end)
 end
+
+-- Every roster update checks the notes we sent. After a few seconds without the new note, the row says so.
+confirmSaves = function(giveUp)
+  if not next(checking) then return end
+  local notes = {}
+  for _, e in ipairs(rosterEntries()) do notes[e.name] = e.note end
+  for item, r in pairs(checking) do
+    if notes[item.entry.name] == item.after then
+      checking[item] = nil
+      item.sending, item.saved = nil, true
+      drawItem(r, item)
+      status:SetText("Saved " .. item.entry.name .. ".")
+    elseif giveUp == item then
+      checking[item] = nil
+      item.sending, item.unconfirmed = nil, true
+      drawItem(r, item)
+    end
+  end
+end
+
+-- If Blizzard ever stops addons writing notes, the game says so with this event instead of an error.
+local blocked = CreateFrame("Frame")
+blocked:RegisterEvent("ADDON_ACTION_FORBIDDEN")
+blocked:RegisterEvent("ADDON_ACTION_BLOCKED")
+blocked:SetScript("OnEvent", function(_, event, addon, what)
+  if addon ~= ADDON_NAME then return end
+  for item, r in pairs(checking) do
+    checking[item], item.sending = nil, nil
+    item.refused = "The game doesn't let addons write notes right now (" .. tostring(what) .. "). Change it by hand in the guild window."
+    drawItem(r, item)
+  end
+  status:SetText(ORANGE .. "The game blocked HAMR from saving a note.|r")
+end)
 
 local importNotes
 local lastNotes, lastSummary         -- the checked list stays while you look at another tab
