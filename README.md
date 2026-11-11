@@ -32,15 +32,15 @@ it's also in the minimap's addon menu. The window has four tabs:
 - **Update notes**: paste the totals from the site ("Copy for the addon" on an event, or "Copy all" on Tallies)
   and press Check. Each note that needs changing is shown as before -> after with its own Save button.
 
-- **Onboarding**: welcoming a recruit. When a recruit whispers you, they're listed on the left with their race
-  (orange when they're not a dwarf); guild members are hidden unless "Show guild members" is ticked. Or press "Use
-  my target". The list, and what you've sent to whom, are kept across reloads for a week. Each recruit ends
-  with an outcome: **Joined** is recorded by itself once someone you invited is in the guild roster; **Didn't
-  join** records a no; **Not a recruit** just takes someone off the list. Anyone you'd messaged who stays silent
-  for a week is recorded as having gone quiet. **History** (bottom right) lists the outcomes, ready to copy. Each message (greeting, history, Discord,
-  next steps) has its own Whisper button, which turns into a checkmark once sent. "Tell guild" warns the guild a
-  recruit is coming (tick "It's an alt" for a different message), and then "Guild invite" lights up. The messages start as Lorem ipsum placeholders: write the clan's own. Edit any
-  message and it's kept; `{name}` becomes their name and `{me}` yours.
+- **Onboarding**: for the officer talking with a recruit. **Nothing is sent for you**: the clan's recruiting is
+  people talking to people. When a recruit whispers you, they're listed on the left with their race (orange when
+  they're not a dwarf); guild members are hidden unless "Show guild members" is ticked. Or press "Use my target".
+  **Reply** opens your chat box to them, and you write it. **Talking points** are your own reminders (reword
+  them as you like), ticked as you cover them in conversation, and **Notes** are yours too. Then **Guild invite**.
+  Each recruit ends with an outcome: **Joined** is recorded by itself once someone you invited is in the guild
+  roster; **Didn't join** records a no; **Not a recruit** just takes someone off the list. Anyone you'd talked
+  with who stays silent for a week is recorded as having gone quiet. **History** (bottom right) lists the
+  outcomes, ready to copy. The list, your ticks and notes are kept across reloads for a week.
 
 When you update notes from an event's export, the addon records the event as done, by you, and tells the other
 officers' addons in the guild; an addon that logs in later asks for what it missed. Checking the same event again
