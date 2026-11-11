@@ -29,7 +29,7 @@ it's also in the minimap's addon menu. The window has four tabs:
   Refresh reads the group again.
 - **Guild notes**: every guild member whose public note has CTA or HW in it, and the rank names. Paste it under
   "Compare with the game" on the site's Tallies page to see where the notes and the site disagree.
-- **Update notes**: paste the totals from the site ("Copy for the addon" on an event, or "Copy all" on Tallies)
+- **Update notes**, in three steps shown at the top (Paste, Check, Save): paste the totals from the site ("Copy for the addon" on an event, or "Copy all" on Tallies)
   and press Check. Each note that needs changing is shown as before -> after with its own Save button.
 
 - **Onboarding**: for the officer talking with a recruit. **Nothing is sent for you**: the clan's recruiting is
@@ -59,6 +59,12 @@ Saving is careful:
 
 While the window is open, "Show offline members" is on so everyone is listed; closing it puts your setting back.
 
+## Options
+
+In the game's **Options › AddOns › HAMR** (or right-click the minimap button, or `/hamr options`): the window's
+background opacity and size, the minimap button on or off, locking the window in place, opening on the last tab
+used even after logging out, and putting the window back in the middle.
+
 ## Commands
 
 - `/hamr`: open or close the window
@@ -66,4 +72,5 @@ While the window is open, "Show offline members" is on so everyone is listed; cl
 - `/hamr welcome`: open the Onboarding tab
 - `/hamr done`: which events' notes were updated, and by whom
 - `/hamr minimap`: hide or show the minimap button
+- `/hamr options`: open the options
 - `/hamr help`: list these

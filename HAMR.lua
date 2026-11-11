@@ -135,7 +135,7 @@ frame:SetMovable(true)
 frame:SetClampedToScreen(true)
 frame:EnableMouse(true)
 frame:RegisterForDrag("LeftButton")
-frame:SetScript("OnDragStart", frame.StartMoving)
+frame:SetScript("OnDragStart", function(self) if not ns.locked then self:StartMoving() end end)      -- unless locked in the options
 frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
 frame:SetBackdrop({ bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background", edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
                     tile = true, tileSize = 32, edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 } })
@@ -209,7 +209,7 @@ local function setBusy(text)
 end
 
 local textScroll = CreateFrame("ScrollFrame", "HAMRTextScroll", frame, "UIPanelScrollFrameTemplate")
-textScroll:SetPoint("TOPLEFT", 24, -132)
+textScroll:SetPoint("TOPLEFT", 24, -146)
 textScroll:SetPoint("BOTTOMRIGHT", -44, 54)
 local function well(scroll)        -- a darker well behind a scrolling area, so it reads as a box; hides with it
   local back = scroll:CreateTexture(nil, "BACKGROUND")
@@ -230,7 +230,7 @@ textScroll:EnableMouse(true)
 textScroll:SetScript("OnMouseDown", function() edit:SetFocus() end)
 
 local listScroll = CreateFrame("ScrollFrame", "HAMRListScroll", frame, "UIPanelScrollFrameTemplate")
-listScroll:SetPoint("TOPLEFT", 24, -132)
+listScroll:SetPoint("TOPLEFT", 24, -146)
 listScroll:SetPoint("BOTTOMRIGHT", -44, 54)
 well(listScroll)
 local list = CreateFrame("Frame", nil, listScroll)
@@ -573,9 +573,20 @@ end)
 local importNotes
 local lastNotes, lastSummary         -- the checked list stays while you look at another tab
 
+-- Where you are in updating the notes: paste, check, save. Done steps are green, the current one gold.
+local STEPS = { "Paste", "Check", "Save" }
+local function steps(current)
+  local parts = {}
+  for i, name in ipairs(STEPS) do
+    local text = "Step " .. i .. ": " .. name
+    parts[i] = (i < current and (GREEN .. text .. "|r")) or (i == current and (GOLD .. text .. "|r")) or (GREY .. text .. "|r")
+  end
+  return table.concat(parts, GREY .. "    >    |r")
+end
+
 local function showNotes(items, summary)
   lastNotes, lastSummary = items, summary
-  open("notes", summary)
+  open("notes", steps(3) .. "\n" .. summary)
   textScroll:Hide()
   listScroll:Show()
   for _, r in ipairs(rows) do r:Hide() end
@@ -607,6 +618,7 @@ local function readTotals(text)
   if not IsInGuild() then status:SetText(ORANGE .. "You're not in a guild.|r") return end
   local eventId, eventTitle = lines[1]:match("event=(%d+)%s*(.-)$")
   local ev = eventId and { id = tonumber(eventId), title = (eventTitle ~= "" and eventTitle) or ("event " .. eventId) } or nil
+  hint:SetText(steps(2) .. "\nChecking each name against the guild roster. Nothing is saved yet.")
   setBusy("Checking against the guild roster")
   local asked = view
   withRoster(function()
@@ -721,9 +733,9 @@ end
 
 importNotes = function()
   local last = recentApplied(1)[1]
-  showPaste("notes", "On the site, press \"Copy for the addon\" (on a published event, or \"Copy all\" on Tallies), paste it here (Ctrl+V) and press Check."
-            .. (last and ("\n" .. GREY .. "Last done: " .. last.title .. ", by " .. last.by .. ", " .. ago(last.at) .. ". /hamr done lists more.|r") or ""),
+  showPaste("notes", steps(1) .. "\nOn the site, press \"Copy for the addon\" (a published event, or \"Copy all\" on Tallies), paste it here (Ctrl+V), then Check.",
             "Check", readTotals)
+  if last then status:SetText(GREY .. "Last done: " .. last.title .. ", by " .. last.by .. ", " .. ago(last.at) .. ". /hamr done lists more.|r") end
 end
 
 ns.addTab("raid", "Raid list", function() exportRaid() end)
@@ -734,6 +746,7 @@ local lastTab = "raid"
 local function showTab(key)
   if not ns.tabs[key] then key = "raid" end
   lastTab = key
+  db().lastTab = key
   ns.tabs[key]()
 end
 ns.showTab = showTab
@@ -788,15 +801,134 @@ end
 
 mini:SetScript("OnDragStart", function(self) self:LockHighlight(); self:SetScript("OnUpdate", followCursor) end)
 mini:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil); self:UnlockHighlight() end)
-mini:SetScript("OnClick", toggleWindow)
+mini:SetScript("OnClick", function(_, which) if which == "RightButton" then ns.openOptions() else toggleWindow() end end)
 mini:SetScript("OnEnter", function(self)
   GameTooltip:SetOwner(self, "ANCHOR_LEFT")
   GameTooltip:AddLine("HAMR Tools")
   GameTooltip:AddLine("Click to open or close", 1, 1, 1)
+  GameTooltip:AddLine("Right-click for options", 0.7, 0.7, 0.7)
   GameTooltip:AddLine("Drag to move this button", 0.7, 0.7, 0.7)
   GameTooltip:Show()
 end)
 mini:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+---------------------------------------------------------------------------------------------------------------------
+-- Options: in the game's own Options > AddOns > HAMR, not in the HAMR window. Built from plain frames too: a slider
+-- here is a Slider with its own track and the game's long-standing thumb texture, so no template can go missing.
+
+local function options()
+  local d = db()
+  d.options = type(d.options) == "table" and d.options or {}
+  local o = d.options
+  if type(o.opacity) ~= "number" then o.opacity = 1 end
+  if type(o.scale) ~= "number" then o.scale = 1 end
+  return o
+end
+
+local function applyOptions()
+  local o = options()
+  frame:SetScale(o.scale)
+  if frame.SetBackdropColor then
+    frame:SetBackdropColor(1, 1, 1, o.opacity)
+    frame:SetBackdropBorderColor(1, 1, 1, math.max(o.opacity, 0.5))     -- the border stays visible, so the window has an edge
+  end
+  ns.locked = o.locked == true
+  if settings().hide then mini:Hide() else mini:Show() end
+end
+
+local optionsPanel = CreateFrame("Frame")
+optionsPanel.name = "HAMR"
+local refreshers = {}
+
+local optTitle = optionsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+optTitle:SetPoint("TOPLEFT", 16, -16)
+optTitle:SetText("HAMR Tools")
+local optSub = optionsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+optSub:SetPoint("TOPLEFT", optTitle, "BOTTOMLEFT", 0, -6)
+optSub:SetText("Type /hamr, or click the hammers by the minimap, to open the window.")
+
+local function optSlider(y, label, low, high, step, get, set, shown)
+  local s = CreateFrame("Slider", nil, optionsPanel)
+  s:SetOrientation("HORIZONTAL")
+  s:SetSize(260, 16)
+  s:SetPoint("TOPLEFT", 20, y)
+  s:SetMinMaxValues(low, high)
+  s:SetValueStep(step)
+  if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
+  s:EnableMouse(true)
+  local track = s:CreateTexture(nil, "BACKGROUND")
+  track:SetPoint("LEFT")
+  track:SetPoint("RIGHT")
+  track:SetHeight(6)
+  track:SetColorTexture(0, 0, 0, 0.6)
+  s:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+  local title = s:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("BOTTOMLEFT", s, "TOPLEFT", 0, 6)
+  title:SetText(label)
+  local value = s:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  value:SetPoint("LEFT", s, "RIGHT", 12, 0)
+  s:SetScript("OnValueChanged", function(_, v)
+    v = math.floor(v / step + 0.5) * step
+    value:SetText(shown(v))
+    set(v)
+    applyOptions()
+  end)
+  refreshers[#refreshers + 1] = function() s:SetValue(get()); value:SetText(shown(get())) end
+  return s
+end
+
+local function optCheck(y, label, get, set)
+  local c = CreateFrame("CheckButton", nil, optionsPanel)
+  c:SetSize(24, 24)
+  c:SetPoint("TOPLEFT", 16, y)
+  c:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+  c:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+  c:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight", "ADD")
+  c:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+  local text = optionsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  text:SetPoint("LEFT", c, "RIGHT", 4, 0)
+  text:SetText(label)
+  c:SetScript("OnClick", function(self) set(self:GetChecked() and true or false); applyOptions() end)
+  refreshers[#refreshers + 1] = function() c:SetChecked(get()) end
+  return c
+end
+
+local function percent(v) return math.floor(v * 100 + 0.5) .. "%" end
+optSlider(-90, "Window background", 0.2, 1, 0.05, function() return options().opacity end, function(v) options().opacity = v end, percent)
+optSlider(-150, "Window size", 0.7, 1.4, 0.05, function() return options().scale end, function(v) options().scale = v end, percent)
+optCheck(-190, "Show the button by the minimap", function() return not settings().hide end, function(on) settings().hide = not on end)
+optCheck(-220, "Lock the window in place", function() return options().locked == true end, function(on) options().locked = on end)
+optCheck(-250, "Open on the tab I used last, even after logging out", function() return options().keepTab == true end, function(on) options().keepTab = on end)
+local resetPos = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
+resetPos:SetSize(200, 24)
+resetPos:SetPoint("TOPLEFT", 20, -292)
+resetPos:SetText("Put the window back in the middle")
+resetPos:SetScript("OnClick", function()
+  if frame.SetUserPlaced then frame:SetUserPlaced(false) end
+  frame:ClearAllPoints()
+  frame:SetPoint("CENTER")
+end)
+optionsPanel:SetScript("OnShow", function() for _, refresh in ipairs(refreshers) do refresh() end end)
+
+local optionsCategory
+local function registerOptions()
+  if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
+    optionsCategory = Settings.RegisterCanvasLayoutCategory(optionsPanel, "HAMR")
+    Settings.RegisterAddOnCategory(optionsCategory)
+  elseif InterfaceOptions_AddCategory then           -- clients from before the new settings window
+    InterfaceOptions_AddCategory(optionsPanel)
+  end
+end
+
+function ns.openOptions()
+  if Settings and Settings.OpenToCategory and optionsCategory then
+    local id = optionsCategory.GetID and optionsCategory:GetID() or optionsCategory.ID
+    pcall(Settings.OpenToCategory, id)
+  elseif InterfaceOptionsFrame_OpenToCategory then
+    InterfaceOptionsFrame_OpenToCategory(optionsPanel)
+    InterfaceOptionsFrame_OpenToCategory(optionsPanel)        -- the old window needs asking twice the first time
+  end
+end
 
 local loader = CreateFrame("Frame")
 loader:RegisterEvent("ADDON_LOADED")
@@ -804,7 +936,9 @@ loader:SetScript("OnEvent", function(self, event, name)
   if event ~= "ADDON_LOADED" or name ~= ADDON_NAME then return end
   self:UnregisterEvent("ADDON_LOADED")
   placeButton()
-  if settings().hide then mini:Hide() else mini:Show() end
+  applyOptions()
+  registerOptions()
+  if options().keepTab and type(db().lastTab) == "string" then lastTab = db().lastTab end
   ns.startComms()
 end)
 
@@ -823,6 +957,7 @@ SlashCmdList.HAMR = function(msg)
     s.hide = not s.hide
     if s.hide then mini:Hide(); say("Minimap button hidden. /hamr minimap brings it back.") else mini:Show() end
   elseif command == "welcome" then showTab("welcome")
+  elseif command == "options" then ns.openOptions()
   elseif command == "done" then
     local list = recentApplied(10)
     if #list == 0 then say("No event's notes recorded as done yet.") end
@@ -833,9 +968,10 @@ SlashCmdList.HAMR = function(msg)
     say("/hamr raid - copy who's in your raid or party, for an event's list")
     say("/hamr roster - copy everyone's tick notes, to check against the site")
     say("/hamr notes - paste the site's totals and save the notes that changed, one at a time")
-    say("/hamr welcome - welcome a new recruit: whispers, a word to the guild, the invite")
+    say("/hamr welcome - the Onboarding tab, for talking with a recruit")
     say("/hamr done - which events' notes have been updated, and by whom")
     say("/hamr minimap - hide or show the minimap button")
+    say("/hamr options - window opacity, size and more (also under Options > AddOns > HAMR)")
   end
 end
 

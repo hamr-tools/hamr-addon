@@ -98,7 +98,7 @@ end
 -- The panel: recent whispers down the left; on the right the recruit, your talking points, your notes and the invite.
 
 local panel = CreateFrame("Frame", nil, ns.frame)
-panel:SetPoint("TOPLEFT", 24, -132)
+panel:SetPoint("TOPLEFT", 24, -146)
 panel:SetPoint("BOTTOMRIGHT", -24, 54)
 panel:Hide()
 table.insert(ns.panels, panel)
