@@ -1,3 +1,5 @@
+<img src="icon.png" width="128" align="right" alt="">
+
 # HAMR
 
 The officers' addon for Clan Battlehammer's HAMR Tools. One addon for both World of Warcraft: Forever and retail.
