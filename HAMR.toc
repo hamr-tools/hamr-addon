@@ -1,11 +1,12 @@
 ## Interface: 16001, 11507, 110207, 120001, 120105
 ## Title: HAMR
-## Notes: Raid lists and guild tick notes for the HAMR Tools site, and notes for officers welcoming recruits.
+## Notes: Raid lists, shared guild events and tick notes for the HAMR Tools site, and notes for officers welcoming recruits.
 ## Author: Clan Battlehammer
-## Version: 0.5.1
+## Version: 0.6.0
 ## IconTexture: Interface\AddOns\HAMR\icon
 ## SavedVariables: HAMRDB
 ## AddonCompartmentFunc: HAMR_OnAddonCompartmentClick
 
 HAMR.lua
+Events.lua
 Onboarding.lua

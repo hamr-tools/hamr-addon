@@ -1,6 +1,6 @@
 -- HAMR: copies the raid list and the guild's tick notes out of the game for the HAMR Tools site, and writes the site's
--- totals back into the public notes, one Save click at a time. It only reads the roster and writes notes; nothing is
--- sent anywhere: officers copy and paste.
+-- totals back into the public notes, one Save click at a time. Nothing leaves the game: officers copy and paste. The
+-- only messages are between guildies' copies of the addon (which notes are done, and Events.lua's shared events).
 
 local MAX_NOTE = 31
 -- Exports say which game they came from, so the site won't match retail names against Forever's guild or the other way.
@@ -257,8 +257,8 @@ end
 function ns.addTab(key, label, run)
   tabCount = tabCount + 1
   local b = CreateFrame("Button", nil, frame)
-  b:SetSize(132, 26)
-  b:SetPoint("BOTTOMLEFT", divider, "TOPLEFT", (tabCount - 1) * 136, 0)
+  b:SetSize(106, 26)          -- five fit across the window
+  b:SetPoint("BOTTOMLEFT", divider, "TOPLEFT", (tabCount - 1) * 110, 0)
   b.back = b:CreateTexture(nil, "BACKGROUND")
   b.back:SetAllPoints()
   local glow = b:CreateTexture(nil, "HIGHLIGHT")
@@ -476,10 +476,15 @@ comms:RegisterEvent("CHAT_MSG_ADDON")
 comms:SetScript("OnEvent", function(_, event, prefix, message, channel, sender)
   if event ~= "CHAT_MSG_ADDON" or prefix ~= PREFIX or type(message) ~= "string" then return end
   local p = split(message)
+  local fromMe = shortName(sender or "") == UnitName("player")
   if p[1] == "A" then
     remember(p[2], p[3], p[4], p[5], p[6])
-  elseif p[1] == "Q" and shortName(sender or "") ~= UnitName("player") then      -- someone just logged in
+  elseif p[1] == "Q" then      -- someone just logged in
+    if fromMe then return end
     for _, r in ipairs(recentApplied(5)) do sendAddon(wireRecord(r), "WHISPER", sender) end
+    if ns.onQuery then ns.onQuery(sender) end
+  elseif ns.onEventMessage and not fromMe then       -- Events.lua's: events, who's on them, raid sizes
+    ns.onEventMessage(p, channel, sender)
   end
 end)
 
@@ -964,6 +969,7 @@ SlashCmdList.HAMR = function(msg)
     s.hide = not s.hide
     if s.hide then mini:Hide(); say("Minimap button hidden. /hamr minimap brings it back.") else mini:Show() end
   elseif command == "welcome" then showTab("welcome")
+  elseif command == "events" then showTab("events")
   elseif command == "options" then ns.openOptions()
   elseif command == "done" then
     local list = recentApplied(10)
@@ -972,6 +978,7 @@ SlashCmdList.HAMR = function(msg)
   elseif command == "" then toggleWindow()
   else
     say("/hamr - open or close the window (or click the hammers by the minimap)")
+    say("/hamr events - the guild's events: open a raid for one, and copy its list for the site")
     say("/hamr raid - copy who's in your raid or party, for an event's list")
     say("/hamr roster - copy everyone's tick notes, to check against the site")
     say("/hamr notes - paste the site's totals and save the notes that changed, one at a time")
@@ -985,5 +992,6 @@ end
 -- What the addon's other files need from this one.
 ns.frame, ns.open, ns.status, ns.hint, ns.action, ns.second = frame, open, status, hint, action, second
 ns.showText = showText
+ns.sendAddon = sendAddon
 ns.say, ns.db, ns.now, ns.trim, ns.lower, ns.shortName = say, db, now, trim, lower, shortName
 ns.GAME, ns.ORANGE, ns.GREY, ns.GOLD, ns.GREEN = GAME, ORANGE, GREY, GOLD, GREEN

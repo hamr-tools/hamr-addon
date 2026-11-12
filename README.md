@@ -6,7 +6,8 @@ The officers' addon for Clan Battlehammer's HAMR Tools. One addon for both World
 
 It copies the raid list and the guild's tick notes out of the game, so officers can paste them into the clan's
 site, and writes the site's Call to Arms (CTA) and Help Wanted (HW) totals back into the guild's public notes,
-one Save click at a time. It never sends anything anywhere: you copy and paste.
+one Save click at a time. Nothing leaves the game: you copy and paste. The only messages are between guildies'
+copies of the addon, over the guild's hidden addon channel (shared events, and which events' notes are done).
 
 ## Install
 
@@ -23,7 +24,7 @@ If the AddOns list says it's out of date after a patch, tick "Load out of date A
 ## Using it
 
 Click the crossed hammers by the minimap (drag them round the edge to move them), or type `/hamr`. On retail
-it's also in the minimap's addon menu. The window has four tabs:
+it's also in the minimap's addon menu. The window has five tabs:
 
 - **Raid list**: who's in your raid or party. Copy it (Ctrl+C) and paste it into the event's list on the site.
   Refresh reads the group again.
@@ -31,6 +32,16 @@ it's also in the minimap's addon menu. The window has four tabs:
   "Compare with the game" on the site's Tallies page to see where the notes and the site disagree.
 - **Update notes**, in three steps shown at the top (Paste, Check, Save): paste the totals from the site ("Copy for the addon" on an event, or "Copy all" on Tallies)
   and press Check. Each note that needs changing is shown as before -> after with its own Save button.
+
+- **Events**: named events shared with everyone in the guild who has the addon. Type a name and press
+  **Create**; each event shows who made it and their guild rank. **Open raid** ties your raid to an event (a party
+  is turned into a raid if you lead it), so two events at the same time never mix: from then on everyone in your
+  raid goes on that event's list and stays on it, even if they swap raids to change layers, and anyone with raid
+  assist is marked. Any number of officers can open a raid for the same event: the event shows one live total
+  across all of them ("37 in 2 raids now"). Pick an event for **Copy for the site**: paste it into the event's
+  "Who was there" on the site, like a raid list. **Archive** puts an event away (tick Archived to look back);
+  **Reopen** brings it back. The Raid list tab still works on its own, if the shared events ever stop working.
+  An addon that logs in late catches up from the others online.
 
 - **Onboarding**: for the officer talking with a recruit. **Nothing is sent for you**: the clan's recruiting is
   people talking to people. When a recruit whispers you, they're listed on the left with their race (orange when
