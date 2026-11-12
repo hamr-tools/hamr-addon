@@ -38,8 +38,10 @@ it's also in the minimap's addon menu. The window has five tabs:
   is turned into a raid if you lead it), so two events at the same time never mix: from then on everyone in your
   raid goes on that event's list and stays on it, even if they swap raids to change layers, and anyone with raid
   assist is marked. Any number of officers can open a raid for the same event: the event shows one live total
-  across all of them ("37 in 2 raids now"). Pick an event for **Copy for the site**: paste it into the event's
-  "Who was there" on the site, like a raid list. **Archive** puts an event away (tick Archived to look back);
+  across all of them ("37 in 2 raids now"). Opening a raid late is fine: everyone already in it goes on the list
+  right away. Pick an event for **Copy for the site**: paste it into the event's "Who was there" on the site, like
+  a raid list, or into Events › **Import from the addon** to make the site event from it, named after it (another
+  officer's copy of the same event adds to that one). **Archive** puts an event away (tick Archived to look back);
   **Reopen** brings it back. The Raid list tab still works on its own, if the shared events ever stop working.
   An addon that logs in late catches up from the others online.
 

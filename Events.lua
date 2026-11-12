@@ -302,7 +302,8 @@ local function exportText(e)
   local names = {}
   for name in pairs(e.people) do names[#names + 1] = name end
   table.sort(names)
-  return "HAMR-EVENT " .. ns.now() .. " " .. ns.GAME .. " " .. me() .. " " .. e.title .. "\n" .. table.concat(names, "\n"), #names
+  -- when the event was made, not now: every officer's copy carries the same time, so the site's Import finds one event
+  return "HAMR-EVENT " .. (e.created or ns.now()) .. " " .. ns.GAME .. " " .. me() .. " " .. e.title .. "\n" .. table.concat(names, "\n"), #names
 end
 
 ---------------------------------------------------------------------------------------------------------------------
