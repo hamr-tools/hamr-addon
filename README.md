@@ -5,45 +5,100 @@
 The officers' addon for Clan Battlehammer's HAMR Tools. One addon for both World of Warcraft: Forever and retail.
 
 It copies the raid list and the guild's tick notes out of the game, so officers can paste them into the clan's
-site, and writes the site's Call to Arms (CTA) and Help Wanted (HW) totals back into the guild's public notes,
-one Save click at a time. Nothing leaves the game: you copy and paste. The only messages are between guildies'
+site, and lines up the site's Call to Arms (CTA) and Help Wanted (HW) totals as a list of new notes to paste into
+the guild window, one after another. Nothing leaves the game: you copy and paste. The only messages are between guildies'
 copies of the addon, over the guild's hidden addon channel (shared events, and which events' notes are done).
 
 ## Install
 
-Download this repository (Code > Download ZIP), unzip it, rename the folder to `HAMR` if needed, and put it in the
-game's AddOns folder:
+HAMR goes in the game's **AddOns** folder, as a folder named exactly `HAMR` with `HAMR.toc` directly inside it
+(not `HAMR/HAMR/HAMR.toc`, and not `hamr-addon-main`).
 
-- retail: `World of Warcraft/_retail_/Interface/AddOns/HAMR`
-- Forever: the Forever client's `Interface/AddOns/HAMR`
+**Finding the AddOns folder.** In the Battle.net app, pick the game (Forever or retail), click the gear next to
+Play, then **Show in Explorer** (Finder on a Mac). That opens the game's folder. Go into the version folder
+(`_retail_` for retail, Forever's own one next to it), then `Interface`, then `AddOns`. If `Interface` or `AddOns`
+isn't there yet, create it. One copy per game: Forever and retail each need their own.
 
-The folder must hold `HAMR.toc` directly. Restart the game.
+Then pick one of these:
 
-If the AddOns list says it's out of date after a patch, tick "Load out of date AddOns" until a new version is out.
+### With an addon manager (updates itself)
+In **WowUp**, choose Get Addons › **Install from URL** and paste `https://github.com/hamr-tools/hamr-addon`.
+CurseBreaker and instawow take the same address. They install the latest release and offer each new version as an
+update. If your manager doesn't list the Forever client, use git or the ZIP below for that game.
+
+### With git (one command to update)
+Open a terminal (or Git Bash on Windows) in the AddOns folder and run:
+
+    git clone https://github.com/hamr-tools/hamr-addon.git HAMR
+
+The last word makes the folder `HAMR`. To update later: `git -C HAMR pull` from the same place. GitHub Desktop works
+too: File › Clone repository, URL `https://github.com/hamr-tools/hamr-addon`, local path ending in `AddOns\HAMR`;
+then Fetch origin and Pull to update.
+
+### By hand
+From **Releases** (on the right of the GitHub page), download `HAMR-<version>.zip` and unzip it into the AddOns
+folder: it already holds the `HAMR` folder. (Code › Download ZIP works too, but its folder is called
+`hamr-addon-main`: rename it to `HAMR`.) To update, delete the old `HAMR` folder and do the same again.
+
+**Afterwards.** Update with the game closed, or type `/reload` once it's done; a version that adds new files needs
+the game restarted. At character select, the **AddOns** button should list HAMR. If it says it's out of date after
+a patch, tick "Load out of date AddOns" until a new version is out. `/hamr` opens it.
 
 ## Using it
 
-Click the crossed hammers by the minimap (drag them round the edge to move them), or type `/hamr`. On retail
-it's also in the minimap's addon menu. The window has five tabs:
+Open the game's guild window and click the HAMR tab on its right edge, or type `/hamr`; either opens on Events. A minimap button (crossed hammers, drag them round the edge to move them) is off at first: turn it on in the options or with `/hamr minimap`. On retail
+it's also in the minimap's addon menu. It opens on Events (or on the tab you used last, if the options say so). The tabs:
 
-- **Raid list**: who's in your raid or party. Copy it (Ctrl+C) and paste it into the event's list on the site.
+- **Raid list** (hidden unless turned on in the options): who's in your raid or party. Copy it (Ctrl+C) and paste it into the event's list on the site.
   Refresh reads the group again.
 - **Guild notes**: every guild member whose public note has CTA or HW in it, and the rank names. Paste it under
   "Compare with the game" on the site's Tallies page to see where the notes and the site disagree.
-- **Update notes**, in three steps shown at the top (Paste, Check, Save): paste the totals from the site ("Copy for the addon" on an event, or "Copy all" on Tallies)
-  and press Check. Each note that needs changing is shown as before -> after with its own Save button.
+- **Update notes**, in three steps shown at the top (Paste, Check, Update by hand): paste the totals from the site
+  ("Copy for the addon" on an event, or "Copy all" on Tallies) and press Check. Since March 2026 the game doesn't let
+  any addon save guild notes, so you do the saving and HAMR does the rest:
+  1. Open the guild window, sort it by **Name** and click the **HAMR tab** on its right side. Drag the HAMR window
+     beside it once; it stays there.
+  2. HAMR shows the first note to change, already selected in a box: press **Ctrl+C**.
+  3. In the guild window, click that member, click their public note, select the old note if it isn't already, press
+     **Ctrl+V** and **Enter**.
+  4. HAMR sees the roster change, turns the row green and selects the next note by itself (the game can take a few
+     seconds; press **Next** or Enter in the box to move on straight away, and the row turns green when it shows).
 
-- **Events**: named events shared with everyone in the guild who has the addon. Type a name and press
-  **Create**; each event shows who made it and their guild rank. **Open raid** ties your raid to an event (a party
-  is turned into a raid if you lead it), so two events at the same time never mix: from then on everyone in your
-  raid goes on that event's list and stays on it, even if they swap raids to change layers, and anyone with raid
-  assist is marked. Any number of officers can open a raid for the same event: the event shows one live total
-  across all of them ("37 in 2 raids now"). Opening a raid late is fine: everyone already in it goes on the list
-  right away. Pick an event for **Copy for the site**: paste it into the event's "Who was there" on the site, like
-  a raid list, or into Events › **Import from the addon** to make the site event from it, named after it (another
-  officer's copy of the same event adds to that one). **Archive** puts an event away (tick Archived to look back);
-  **Reopen** brings it back. The Raid list tab still works on its own, if the shared events ever stop working.
-  An addon that logs in late catches up from the others online.
+  The list is in name order, like the guild window. A note saved with the wrong numbers is flagged in orange.
+  Two officers can split the list: each sees the other's rows go green. Your last paste survives a `/reload`, so
+  Check carries on where you left off.
+
+- **Events**: named events shared with everyone in the guild who has the addon. Each event belongs to the guild it
+  was made in: a character only sees and shares its own guild's events, even when another character on the same
+  account is in another guild.
+  - **Create**: type a name and press Create. The event is shared with the guild.
+  - **Track my raid** on an event: everyone in your group, or who joins it, goes on its list and stays on it, even if
+    they swap raids to change layers. Anyone with raid assist is marked. A party you lead is turned into a raid.
+  - **Raids**: each group tracked for an event is one of its raids, remembered with everyone who was ever in it.
+    Leave a group and the next one you lead or join is the event's next raid, so one officer can build Raid 1, pass
+    the lead, leave, and build Raid 2 on the same layer. A group that's mostly a raid the event already has counts as
+    that raid. The event shows one live total ("152 in 4 raids now") and each raid how many are in it now.
+  - **RFD**, the tick beside each event, turns on raid building for that event, for you only: each officer ticks it
+    for themselves, so one can rebuild raids while another just tracks. An event with RFD in its name starts ticked.
+    While you track an event with it ticked, a guildie who whispers you just **RFD**, or says it in guild chat, is
+    invited (case and punctuation don't matter: "rfd!" works). Nothing is sent back. When the word is heard but
+    nobody is invited, your chat says why (not tracking, not ticked, not in the guild). The word can be changed in
+    the options (it changes the tick's name too), and whispers from outside the guild can be allowed there, for testing.
+  - **Rebuild** (you're not in a group) invites everyone who was in that raid; **Invite N missing** (you're in it)
+    invites whoever left. Offline guildies are skipped. You need to lead the group, or have assist in a raid. Invites
+    go out one at a time, a little apart, slowing down if the game complains, and wait while a party becomes a raid.
+    The status line then sums it up: who joined, who's already in a group (likely in another raid), who wasn't
+    found. When the raid reaches 40 the invites stop and it says who wasn't invited: start the next raid for them.
+    If the game ever stops addons inviting on their own, the button becomes **Invite next**, one per click.
+    Using another addon for the invites? Turn **Raid invites** off in the options: the buttons go, HAMR stops
+    turning parties into raids, and it still keeps the lists.
+  - **Who's on it**: everyone on the event, raid by raid, for anyone in the guild with the addon (officer or not).
+  - **Copy for the site**: paste it into the event's "Who was there" on the site, like a raid list, or into
+    Events › **Import from the addon** to make the site event from it, named after it (another officer's copy of the
+    same event adds to that one). **End event** puts it away (tick Ended events to look back); **Reopen** brings it
+    back. **Delete** (only on events you made, on the character that made them, and only after a second click)
+    removes it for everyone in the guild who has HAMR, names and all; it can't come back from someone else's copy. The Raid list tab still works on its own, if the shared events ever stop working. An addon that logs in
+    late catches up from the others online.
 
 - **Onboarding**: for the officer talking with a recruit. **Nothing is sent for you**: the clan's recruiting is
   people talking to people. When a recruit whispers you, they're listed on the left with their race (orange when
@@ -55,20 +110,20 @@ it's also in the minimap's addon menu. The window has five tabs:
   with who stays silent for a week is recorded as having gone quiet. **History** (bottom right) lists the
   outcomes, ready to copy. The list, your ticks and notes are kept across reloads for a week.
 
-When you update notes from an event's export, the addon records the event as done, by you, and tells the other
+When you update notes from an event's export, the first note it sees saved records the event as done, by you, and tells the other
 officers' addons in the guild; an addon that logs in later asks for what it missed. Checking the same event again
 says who did it and when (running it again is always safe). `/hamr done` lists the recent ones.
 
-Saving is careful:
+The new notes are careful:
 
-- Only the numbers after `CTA:` and `HW:` change; the rest of the note stays as the officers wrote it.
-- A note that's higher than the site, or isn't a tick note yet (an alt's), is flagged and needs a deliberate click.
-- A note someone changed after you pressed Check is never overwritten: the row refreshes instead.
-- A row only says Saved once the game's own roster shows the new note. If it doesn't show within a few
-  seconds, the row says so and offers Retry; if the game refuses or blocks it, the row says why.
-- Nothing is saved in combat.
+- Only the numbers after `CTA:` and `HW:` change; the rest of the note stays as the officers wrote it. An empty
+  note becomes `Main CTA:1 HW:`.
+- A note that's higher than the site, or has words but no ticks yet (an alt's?), is flagged so you look first.
+- A row only goes green once the game's own roster shows the site's numbers on that note.
 - Totals from the other game's site are refused.
-- Saving needs a guild rank that can edit public notes.
+- Changing notes needs a guild rank that can edit public notes.
+- HAMR never touches the game's guild window: its tab only sits beside it. An addon reaching into that window could
+  stop the game from saving notes by hand too.
 
 While the window is open, "Show offline members" is on so everyone is listed; closing it puts your setting back.
 
@@ -76,7 +131,7 @@ While the window is open, "Show offline members" is on so everyone is listed; cl
 
 In the game's **Options › AddOns › HAMR** (or right-click the minimap button, or `/hamr options`): the window's
 background opacity and size, the minimap button on or off, locking the window in place, opening on the last tab
-used even after logging out, and putting the window back in the middle.
+used even after logging out (otherwise it opens on Events), the Raid list tab, raid invites on the Events tab, invites for the keyword (whispers, guild chat, whispers from outside the guild), the keyword itself (RFD unless changed), and putting the window back in the middle.
 
 ## Commands
 

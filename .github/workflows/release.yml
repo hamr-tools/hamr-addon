@@ -1,0 +1,28 @@
+# Makes a GitHub release for each new version in HAMR.toc, with HAMR-<version>.zip holding the HAMR folder, so addon
+# managers (WowUp, CurseBreaker, instawow) can install it and offer updates. A push whose version already has a
+# release does nothing. This repository is published from the guild site's (dev/publish_addon.sh).
+name: Release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the version
+        id: v
+        run: |
+          echo "version=$(sed -n 's/^## Version: *//p' HAMR.toc | tr -d '\r')" >> "$GITHUB_OUTPUT"
+      - name: Release it, unless it already is
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          if [ -z "$VERSION" ]; then echo "No version in HAMR.toc"; exit 1; fi
+          if gh release view "v$VERSION" >/dev/null 2>&1; then echo "v$VERSION is already released."; exit 0; fi
+          git archive --format=zip --prefix=HAMR/ -o "HAMR-$VERSION.zip" HEAD -- . ':(exclude).github'
+          gh release create "v$VERSION" "HAMR-$VERSION.zip" --title "HAMR $VERSION" \
+            --notes "Unzip into the game's Interface/AddOns folder (it holds the HAMR folder), or update from your addon manager."

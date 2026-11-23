@@ -1,6 +1,9 @@
--- HAMR: copies the raid list and the guild's tick notes out of the game for the HAMR Tools site, and writes the site's
--- totals back into the public notes, one Save click at a time. Nothing leaves the game: officers copy and paste. The
--- only messages are between guildies' copies of the addon (which notes are done, and Events.lua's shared events).
+-- HAMR: copies the raid list and the guild's tick notes out of the game for the HAMR Tools site, and lines up the site's
+-- totals as a list of notes for officers to paste into the game's guild window, one after another. Since Blizzard's
+-- March 2026 hotfix addons can't write guild notes (C_GuildInfo.SetNote is only allowed from the game's own, untouched
+-- UI, even on a click), so HAMR never tries: it copies, the officer pastes, and HAMR watches the roster to tick it off.
+-- Nothing leaves the game. The only messages are between guildies' copies of the addon (which notes are done, and
+-- Events.lua's shared events).
 
 local MAX_NOTE = 31
 -- Exports say which game they came from, so the site won't match retail names against Forever's guild or the other way.
@@ -77,10 +80,10 @@ local function askForRoster()
   if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() elseif GuildRoster then GuildRoster() end
 end
 
-local pending, confirmSaves
+local pending, rosterChanged
 local waiter = CreateFrame("Frame")
 waiter:SetScript("OnEvent", function()
-  if confirmSaves then confirmSaves() end
+  if rosterChanged then rosterChanged() end
   if pending then local run = pending; pending = nil; run() end
 end)
 waiter:RegisterEvent("GUILD_ROSTER_UPDATE")
@@ -98,14 +101,6 @@ local function canEditNotes()
   if C_GuildInfo and C_GuildInfo.CanEditPublicNote then return C_GuildInfo.CanEditPublicNote() end
   if CanEditPublicNote then return CanEditPublicNote() end
   return true
-end
-
-local function writeNote(entry, note)
-  if C_GuildInfo and C_GuildInfo.SetNote and entry.guid then
-    C_GuildInfo.SetNote(entry.guid, note, true)
-  else
-    GuildRosterSetPublicNote(entry.index, note)
-  end
 end
 
 -- Finds a roster entry from a name as the site writes it: "Name", "Name Surname" or "Name-Realm".
@@ -236,7 +231,7 @@ textScroll:EnableMouse(true)
 textScroll:SetScript("OnMouseDown", function() edit:SetFocus() end)
 
 local listScroll = CreateFrame("ScrollFrame", "HAMRListScroll", frame, "UIPanelScrollFrameTemplate")
-listScroll:SetPoint("TOPLEFT", 24, -146)
+listScroll:SetPoint("TOPLEFT", 24, -220)         -- under the note being copied (cur, below)
 listScroll:SetPoint("BOTTOMRIGHT", -44, 54)
 well(listScroll)
 local list = CreateFrame("Frame", nil, listScroll)
@@ -246,7 +241,24 @@ local rows = {}
 
 -- Tabs: plain buttons with a gold line under the open one. Other files add theirs with ns.addTab.
 local tabButtons, tabCount, currentTab, view = {}, 0, nil, 0
+local tabOrder = {}
 ns.panels, ns.tabs = {}, {}         -- frames hidden whenever a tab opens; {key = function that opens it}
+ns.hiddenTabs = { raid = true }     -- the Raid list tab is off unless the options turn it on
+
+-- Lines the tabs up left to right, leaving out hidden ones.
+local function layoutTabs()
+  local x = 0
+  for _, key in ipairs(tabOrder) do
+    local b = tabButtons[key]
+    b:ClearAllPoints()
+    if ns.hiddenTabs[key] then b:Hide() else
+      b:SetPoint("BOTTOMLEFT", divider, "TOPLEFT", x * 110, 0)
+      b:Show()
+      x = x + 1
+    end
+  end
+end
+ns.layoutTabs = layoutTabs
 
 local function tabLook(b, selected)
   b.label:SetFontObject(selected and GameFontHighlight or GameFontNormal)
@@ -275,8 +287,10 @@ function ns.addTab(key, label, run)
   b.key = key
   b:SetScript("OnClick", function() ns.showTab(key) end)
   tabButtons[key] = b
+  tabOrder[#tabOrder + 1] = key
   ns.tabs[key] = run
   tabLook(b, false)
+  layoutTabs()
   return b
 end
 
@@ -327,23 +341,28 @@ local function showPaste(key, hintText, buttonText, onRead)
   action:Show()
 end
 
+local ROW_H = 42
 local function row(i)
   local r = rows[i]
   if not r then
     r = CreateFrame("Frame", nil, list)
-    r:SetSize(510, 48)
-    r:SetPoint("TOPLEFT", 0, -(i - 1) * 50)
+    r:SetSize(510, ROW_H - 2)
+    r:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
     if i % 2 == 0 then
       local stripe = r:CreateTexture(nil, "BACKGROUND")
       stripe:SetAllPoints()
       stripe:SetColorTexture(1, 1, 1, 0.04)
     end
+    r.mark = r:CreateTexture(nil, "BACKGROUND", nil, 1)      -- the row being copied now
+    r.mark:SetAllPoints()
+    r.mark:SetColorTexture(1, 0.82, 0, 0.14)
+    r.mark:Hide()
     r.text = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     r.text:SetPoint("LEFT", 6, 0)
-    r.text:SetPoint("RIGHT", -100, 0)
+    r.text:SetPoint("RIGHT", -90, 0)
     r.text:SetJustifyH("LEFT")
     r.button = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
-    r.button:SetSize(90, 22)
+    r.button:SetSize(80, 22)
     r.button:SetPoint("RIGHT", -4, 0)
     rows[i] = r
   end
@@ -357,53 +376,43 @@ end
 local ORANGE, GREY, GOLD, GREEN = "|cffff9a2e", "|cff9d9d9d", "|cffffd100", "|cff4fd86a"
 
 local function judge(item)
-  if item.info then item.state = "info" return end       -- something to look at, nothing to save
+  if item.info then item.state = "info" return end       -- something to look at, nothing to change
   local have = noteCounts(item.entry.note)
   item.after = withCounts(item.entry.note, item.want)
-  item.problem, item.button = nil, "Save"
+  item.problem = nil
   if have and have.cta == item.want.cta and have.hw == item.want.hw then
     item.state = item.rankNote and "info" or "same"
   elseif #item.after > MAX_NOTE then
-    item.state, item.problem = "long", "The new note would be longer than " .. MAX_NOTE .. " letters. Shorten it by hand."
-  elseif not have then
-    item.state, item.problem, item.button = "warn", "This isn't a tick note yet. Is it an alt? Pair it with its main on the site instead.", "Replace"
-  elseif have.cta > item.want.cta or have.hw > item.want.hw then
-    item.state, item.problem, item.button = "warn", "The note is higher than the site. Someone may have changed it by hand: compare with /hamr roster first.", "Lower it"
+    item.state, item.problem = "long", "The new note is longer than the game's " .. MAX_NOTE .. " letters: shorten it as you paste."
+  elseif not have and trim(item.entry.note) ~= "" then       -- an empty note is just someone new
+    item.state, item.problem = "warn", "This note has no ticks yet. Is it an alt? Then skip it, and pair it with its main on the site."
+  elseif have and (have.cta > item.want.cta or have.hw > item.want.hw) then
+    item.state, item.problem = "warn", "The note is higher than the site. Someone may have changed it by hand: check before lowering it."
   else
     item.state = "change"
   end
 end
 
-local function drawItem(r, item)
-  local note = item.entry.note ~= "" and item.entry.note or GREY .. "(empty)|r"
+local function drawItem(r, item, current)
+  local note = item.entry.note ~= "" and item.entry.note or (item.info and "" or (GREY .. "(empty)|r"))
   local line = GOLD .. item.entry.name .. "|r   " .. note .. (item.state == "info" and "" or ("   ->   " .. item.after))
   local extra = ""
-  if item.problem then extra = extra .. "\n" .. ORANGE .. item.problem .. "|r" end
-  if item.info then extra = extra .. "\n" .. ORANGE .. item.info .. "|r" end
-  if item.rankNote then extra = extra .. "\n" .. GREY .. item.rankNote .. "|r" end
   if item.saved then
-    r.text:SetText(line .. "\n" .. GREEN .. "Saved: the game's roster shows the new note.|r")
-    r.button:SetText("Saved")
-    r.button:Disable()
-    return
-  elseif item.sending then
-    r.text:SetText(line .. "\n" .. GREY .. "Saving, waiting for the game to show it...|r")
-    r.button:SetText("Saving")
-    r.button:Disable()
-    return
-  elseif item.unconfirmed then
-    r.text:SetText(line .. "\n" .. ORANGE .. "Sent, but the game's roster doesn't show it yet. Retry, or check it in the guild window.|r")
-    r.button:Show()
-    r.button:SetText("Retry")
-    r.button:Enable()
-    return
+    extra = "\n" .. GREEN .. "Done: the guild roster shows it.|r"
+  else
+    if item.mismatch then
+      extra = extra .. "\n" .. ORANGE .. "The note now reads \"" .. item.mismatch .. "\": the numbers don't match. Fix it in the guild window.|r"
+    elseif item.passed then
+      extra = extra .. "\n" .. GREY .. "Waiting for the guild roster to show it (a few seconds). Skipped it? Press Go to.|r"
+    end
+    if item.problem then extra = extra .. "\n" .. ORANGE .. item.problem .. "|r" end
+    if item.info then extra = extra .. "\n" .. ORANGE .. item.info .. "|r" end
+    if item.rankNote then extra = extra .. "\n" .. GREY .. item.rankNote .. "|r" end
   end
-  if item.refused then extra = extra .. "\n" .. ORANGE .. item.refused .. "|r" end
   r.text:SetText(line .. extra)
-  if item.state == "info" then r.button:Hide() return end
-  r.button:Show()
-  r.button:SetText(item.button)
-  if item.state == "long" then r.button:Disable() else r.button:Enable() end
+  if current then r.mark:Show() else r.mark:Hide() end
+  if item.all then r.button:SetText("Show all"); r.button:Show()
+  elseif item.state == "info" or item.saved or current then r.button:Hide() else r.button:SetText("Go to"); r.button:Show() end
 end
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -438,9 +447,13 @@ local function split(text)
   return parts
 end
 
+-- Returns what the game said, so Events.lua's queue can tell a throttled message (retail returns a result code) and
+-- send it again later. Never worth an error.
 local function sendAddon(message, channel, target)
   local send = (C_ChatInfo and C_ChatInfo.SendAddonMessage) or SendAddonMessage
-  if send and IsInGuild() then pcall(send, PREFIX, message, channel, target) end      -- never worth an error
+  if not (send and IsInGuild()) then return true end
+  local ok, result = pcall(send, PREFIX, message, channel, target)
+  return ok, result
 end
 
 local function remember(game, id, at, by, title)
@@ -497,95 +510,171 @@ function ns.startComms()
   C_Timer.After(15, function() sendAddon("Q", "GUILD") end)
 end
 
-local checking = {}        -- notes sent to the game, waiting for its roster to show them: {item = row}
+---------------------------------------------------------------------------------------------------------------------
+-- Updating notes by hand, down the list. The note being copied sits in a box, already selected: Ctrl+C, then in the
+-- game's guild window click the member, their note, Ctrl+V, Enter. HAMR sees the roster change, ticks the row off and
+-- selects the next. The list is in name order, like the guild window sorted by Name, so both go down together.
+-- HAMR never touches the guild window itself: an addon reaching into it could stop the game's own note saving too.
 
-local function save(r, item)
-  local fresh
-  for _, e in ipairs(rosterEntries()) do
-    if e.name == item.entry.name then fresh = e break end
-  end
-  if not fresh then
-    r.text:SetText(GOLD .. item.entry.name .. "|r\n" .. ORANGE .. "Not in the guild any more.|r")
-    r.button:Disable()
-    return
-  end
-  if fresh.note == item.after then              -- a Retry, and the first one went through after all
-    item.sending, item.unconfirmed, item.refused, item.saved = nil, nil, nil, true
-    markApplied(item.event)
-    drawItem(r, item)
-    return
-  end
-  if fresh.note ~= item.entry.note then        -- someone else changed it since the check
-    item.entry = fresh
-    judge(item)
-    drawItem(r, item)
-    status:SetText(ORANGE .. item.entry.name .. "'s note changed since you checked. Look again before saving.|r")
-    return
-  end
-  if not canEditNotes() then
-    status:SetText(ORANGE .. "Your guild rank can't edit public notes.|r")
-    return
-  end
-  if InCombatLockdown and InCombatLockdown() then
-    status:SetText(ORANGE .. "Notes can't be saved in combat. Try again once it's over.|r")
-    return
-  end
-  -- Saved only once the game's own roster shows the new note: that's the proof it was written.
-  item.sending, item.unconfirmed, item.refused = true, nil, nil
-  checking[item] = r
-  drawItem(r, item)
-  local ok, err = pcall(writeNote, fresh, item.after)
-  if not ok then
-    checking[item], item.sending = nil, nil
-    item.refused = "The game refused the change: " .. tostring(err)
-    drawItem(r, item)
-    return
-  end
-  if not item.sending then return end           -- the game blocked it while we called (see blocked below)
-  status:SetText("Saving " .. item.entry.name .. "...")
-  askForRoster()
-  C_Timer.After(4, function() confirmSaves(item) end)
+local cur = CreateFrame("Frame", nil, frame)
+cur:SetPoint("TOPLEFT", 24, -150)
+cur:SetPoint("RIGHT", -24, 0)
+cur:SetHeight(62)
+cur:Hide()
+table.insert(ns.panels, cur)
+local curBack = cur:CreateTexture(nil, "BACKGROUND")
+curBack:SetAllPoints()
+curBack:SetColorTexture(1, 0.82, 0, 0.1)
+cur.name = cur:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+cur.name:SetPoint("TOPLEFT", 10, -8)
+cur.was = cur:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+cur.was:SetPoint("LEFT", cur.name, "RIGHT", 12, 0)
+cur.was:SetPoint("RIGHT", cur, "RIGHT", -110, 0)
+cur.was:SetJustifyH("LEFT")
+cur.box = CreateFrame("EditBox", nil, cur)
+cur.box:SetSize(250, 22)
+cur.box:SetPoint("BOTTOMLEFT", 12, 8)
+cur.box:SetFontObject(ChatFontNormal)
+cur.box:SetAutoFocus(false)
+cur.box:SetMaxLetters(100)
+if cur.box.SetTextInsets then cur.box:SetTextInsets(4, 4, 0, 0) end
+local boxBack = cur.box:CreateTexture(nil, "BACKGROUND")
+boxBack:SetPoint("TOPLEFT", -2, 2)
+boxBack:SetPoint("BOTTOMRIGHT", 2, -2)
+boxBack:SetColorTexture(0, 0, 0, 0.6)
+cur.tip = cur:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+cur.tip:SetPoint("LEFT", cur.box, "RIGHT", 12, 0)
+cur.tip:SetPoint("RIGHT", cur, "RIGHT", -110, 0)
+cur.tip:SetJustifyH("LEFT")
+cur.next = CreateFrame("Button", nil, cur, "UIPanelButtonTemplate")
+cur.next:SetSize(96, 24)
+cur.next:SetPoint("RIGHT", -8, 0)
+cur.next:SetText("Next")
+
+local lastNotes, lastSummary, curIndex        -- the checked list stays while you look at another tab
+
+local function actionable(item) return item.state ~= "info" and item.state ~= "same" end
+local function todo(item) return actionable(item) and not item.saved and not item.passed end
+
+-- Puts the keyboard in the box with the note selected, unless the officer is typing somewhere else (the guild
+-- window's note): then it waits for them.
+local function focusBox()
+  if not cur:IsShown() or not cur.item then return end
+  local f = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+  if f and f ~= cur.box then return end
+  cur.box:SetFocus()
+  cur.box:HighlightText()
 end
 
--- Every roster update checks the notes we sent. After a few seconds without the new note, the row says so.
-confirmSaves = function(giveUp)
-  if not next(checking) then return end
-  local notes = {}
-  for _, e in ipairs(rosterEntries()) do notes[e.name] = e.note end
-  for item, r in pairs(checking) do
-    if notes[item.entry.name] == item.after then
-      checking[item] = nil
-      item.sending, item.saved = nil, true
-      markApplied(item.event)
-      drawItem(r, item)
-      status:SetText("Saved " .. item.entry.name .. ".")
-    elseif giveUp == item then
-      checking[item] = nil
-      item.sending, item.unconfirmed = nil, true
-      drawItem(r, item)
+-- The first row still to do after `from`, round to the top again.
+local function nextTodo(from)
+  local items = lastNotes or {}
+  for k = 0, #items - 1 do
+    local j = ((from or 0) + k) % #items + 1
+    if todo(items[j]) then return j end
+  end
+end
+
+local function drawNotes()
+  local items = lastNotes or {}
+  local total, done = 0, 0
+  for i, item in ipairs(items) do
+    drawItem(row(i), item, i == curIndex)
+    if actionable(item) then
+      total = total + 1
+      if item.saved then done = done + 1 end
     end
   end
+  local item = curIndex and items[curIndex]
+  cur.item = item
+  if item then
+    cur.name:SetText(item.entry.name)
+    cur.was:SetText(GREY .. "Now:|r " .. (item.entry.note ~= "" and item.entry.note or (GREY .. "(empty)|r")))
+    cur.box:SetText(item.after)
+    if cur.box:HasFocus() then cur.box:HighlightText() end
+    cur.box:Show()
+    cur.next:Show()
+    cur.tip:SetText("Ctrl+C, then in the guild window: their note, Ctrl+V, Enter. Next comes up by itself.")
+  else
+    cur.name:SetText((done == total) and (total == 0 and "Nothing to change" or "All done") or "Waiting for the roster")
+    cur.was:SetText("")
+    cur.box:SetText("")
+    cur.box:Hide()
+    cur.next:Hide()
+    cur.tip:SetText(done == total and "" or "The rest turn green once the game's roster shows them. Go to any row to do it again.")
+  end
+  if total > 0 then status:SetText(done .. " of " .. total .. " done" .. (done == total and ": every note matches the site." or ".")) end
 end
 
--- If Blizzard ever stops addons writing notes, the game says so with this event instead of an error.
-local blocked = CreateFrame("Frame")
-blocked:RegisterEvent("ADDON_ACTION_FORBIDDEN")
-blocked:RegisterEvent("ADDON_ACTION_BLOCKED")
-blocked:SetScript("OnEvent", function(_, event, addon, what)
-  if addon ~= ADDON_NAME then return end
-  for item, r in pairs(checking) do
-    checking[item], item.sending = nil, nil
-    item.refused = "The game doesn't let addons write notes right now (" .. tostring(what) .. "). Change it by hand in the guild window."
-    drawItem(r, item)
+-- Makes row i the one being copied, scrolled into view.
+local function pick(i, focus)
+  curIndex = i
+  if not cur:IsShown() then return end
+  drawNotes()
+  if i then
+    local top, height, at = (i - 1) * ROW_H, listScroll:GetHeight() or 200, listScroll:GetVerticalScroll()
+    if top < at or top + ROW_H > at + height then
+      listScroll:SetVerticalScroll(math.max(0, math.min(top - ROW_H, listScroll:GetVerticalScrollRange() or 0)))
+    end
   end
-  status:SetText(ORANGE .. "The game blocked HAMR from saving a note.|r")
+  if focus then focusBox() end
+end
+
+-- Next (or Enter in the box): this one's pasted, on to the next. It goes green when the roster shows it.
+local function passOn()
+  local item = cur.item
+  if not item then return end
+  item.passed = true
+  pick(nextTodo(curIndex), true)
+end
+cur.next:SetScript("OnClick", passOn)
+cur.box:SetScript("OnEnterPressed", passOn)
+cur.box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+cur.box:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+cur.box:SetScript("OnTextChanged", function(self, typed)      -- it's for copying: typing puts the note back
+  if typed and cur.item then self:SetText(cur.item.after); self:HighlightText() end
+end)
+
+-- Every roster update ticks off the notes that now carry the site's numbers, whoever changed them (two officers can
+-- split the list). A note that changed to other numbers is flagged: a typo, or someone else got there first.
+rosterChanged = function()
+  if not lastNotes then return end
+  local notes = {}
+  for _, e in ipairs(rosterEntries()) do notes[e.name] = e.note end
+  local moved = false
+  for i, item in ipairs(lastNotes) do
+    local note = notes[item.entry.name]
+    if actionable(item) and not item.saved and note then
+      local has = noteCounts(note)
+      if has and has.cta == item.want.cta and has.hw == item.want.hw then
+        item.saved, item.mismatch = true, nil
+        markApplied(item.event)
+        if i == curIndex then moved = true end
+      elseif note ~= item.entry.note then
+        item.mismatch = note
+      else
+        item.mismatch = nil
+      end
+    end
+  end
+  if moved then pick(nextTodo(curIndex), true) elseif cur:IsShown() then drawNotes() end
+end
+
+-- The game only sends the roster when asked (and at most every few seconds), so keep asking while there's work left.
+local sinceAsked = 0
+cur:SetScript("OnUpdate", function(_, elapsed)
+  sinceAsked = sinceAsked + elapsed
+  if sinceAsked < 5 then return end
+  sinceAsked = 0
+  for _, item in ipairs(lastNotes or {}) do
+    if actionable(item) and not item.saved then askForRoster() return end
+  end
 end)
 
 local importNotes
-local lastNotes, lastSummary         -- the checked list stays while you look at another tab
 
--- Where you are in updating the notes: paste, check, save. Done steps are green, the current one gold.
-local STEPS = { "Paste", "Check", "Save" }
+-- Where you are in updating the notes: paste, check, update. Done steps are green, the current one gold.
+local STEPS = { "Paste", "Check", "Update by hand" }
 local function steps(current)
   local parts = {}
   for i, name in ipairs(STEPS) do
@@ -596,22 +685,31 @@ local function steps(current)
 end
 
 local function showNotes(items, summary)
+  if items ~= lastNotes then curIndex = nil end
   lastNotes, lastSummary = items, summary
   open("notes", steps(3) .. "\n" .. summary)
+  edit:ClearFocus()         -- the paste box had the keyboard; the note to copy gets it now
   textScroll:Hide()
+  cur:Show()
   listScroll:Show()
   for _, r in ipairs(rows) do r:Hide() end
   for i, item in ipairs(items) do
-    local r = row(i)
-    drawItem(r, item)
-    r.button:SetScript("OnClick", function() save(r, item) end)
+    row(i).button:SetScript("OnClick", function()
+      if item.all then         -- the names the site has that this guild doesn't: to copy or read
+        showText("notes", item.entry.name .. ". Press Back to return to the list.", table.concat(item.all, "\n"), "Back", function() showNotes(lastNotes, lastSummary) end)
+        return
+      end
+      item.passed = nil
+      pick(i, true)
+    end)
   end
-  list:SetHeight(math.max(#items * 50, 10))
+  list:SetHeight(math.max(#items * ROW_H, 10))
   listScroll:SetVerticalScroll(0)
-  if #items == 0 then status:SetText("Every note already matches the site.") end
   second:SetText("Paste again")
   second:SetScript("OnClick", function() lastNotes = nil; importNotes() end)
   second:Show()
+  pick((curIndex and items[curIndex] and todo(items[curIndex])) and curIndex or nextTodo(0), true)
+  if not canEditNotes() then status:SetText(ORANGE .. "Your guild rank can't edit public notes: ask someone whose rank can.|r") end
 end
 
 local function readTotals(text)
@@ -627,6 +725,7 @@ local function readTotals(text)
     return
   end
   if not IsInGuild() then status:SetText(ORANGE .. "You're not in a guild.|r") return end
+  db().lastPaste = { text = text, at = now() }        -- survives a /reload halfway down the list
   local eventId, eventTitle = lines[1]:match("event=(%d+)%s*(.-)$")
   local ev = eventId and { id = tonumber(eventId), title = (eventTitle ~= "" and eventTitle) or ("event " .. eventId) } or nil
   hint:SetText(steps(2) .. "\nChecking each name against the guild roster. Nothing is saved yet.")
@@ -662,15 +761,23 @@ local function readTotals(text)
         end
       end
     end
-    local order = { change = 1, warn = 2, long = 3, info = 4 }
-    table.sort(items, function(a, b)
-      if order[a.state] ~= order[b.state] then return order[a.state] < order[b.state] end
-      return a.entry.name < b.entry.name
+    table.sort(items, function(a, b)          -- name order, like the guild window sorted by Name; nothing-to-do rows last
+      local ia, ib = a.state == "info", b.state == "info"
+      if ia ~= ib then return ib end
+      return lower(a.entry.name) < lower(b.entry.name)
     end)
+    if #missing > 0 then
+      local shown = table.concat(missing, ", ", 1, math.min(#missing, 4)) .. (#missing > 4 and (" and " .. (#missing - 4) .. " more") or "")
+      items[#items + 1] = { entry = { name = #missing .. " not in the guild", note = "" }, state = "info", info = shown, all = missing }
+    end
     local changes, flags = 0, 0
     for _, item in ipairs(items) do if item.state == "info" then flags = flags + 1 else changes = changes + 1 end end
-    local summary = changes .. " to change, " .. same .. " already right" .. (flags > 0 and (", " .. flags .. " to look at (nothing to save).") or ".")
-    if #missing > 0 then summary = summary .. " Not in the guild: " .. table.concat(missing, ", ", 1, math.min(#missing, 8)) .. (#missing > 8 and "..." or "") end
+    local summary = changes .. " to change, " .. same .. " already right" .. (flags > 0 and (", " .. flags .. " to look at at the end.") or ".")
+      .. " In name order: sort the guild window by Name."
+    if #missing > 0 then summary = summary .. " " .. #missing .. " not in the guild." end
+    if changes == 0 and same == 0 and #missing > 0 then
+      summary = ORANGE .. "None of these names are in this guild. Is it the export from another guild's site?|r"
+    end
     local done = ev and applied()[GAME .. ":" .. ev.id]
     if done then
       summary = GOLD .. ev.title .. " was already done by " .. done.by .. ", " .. ago(done.at) .. ". Running it again is safe.|r\n" .. summary
@@ -737,7 +844,9 @@ exportRoster = function()
         count = count + 1
       end
     end
-    showText("roster", "Press Ctrl+C to copy, then paste it under \"Compare with the game\" on the site's Tallies page. " .. count .. " tick notes.",
+    local said = count > 0 and (count .. " tick notes.")
+      or (ORANGE .. "No note in this guild has CTA: or HW: in it yet|r, so the site has nothing to compare: it reads notes like \"Main CTA:3 HW:1\".")
+    showText("roster", "Press Ctrl+C to copy, then paste it under \"Compare with the game\" on the site's Tallies page. " .. said,
              table.concat(lines, "\n"), "Read again", function() exportRoster() end)
   end)
 end
@@ -746,16 +855,24 @@ importNotes = function()
   local last = recentApplied(1)[1]
   showPaste("notes", steps(1) .. "\nOn the site, press \"Copy for the addon\" (a published event, or \"Copy all\" on Tallies), paste it here (Ctrl+V), then Check.",
             "Check", readTotals)
-  if last then status:SetText(GREY .. "Last done: " .. last.title .. ", by " .. last.by .. ", " .. ago(last.at) .. ". /hamr done lists more.|r") end
+  local kept = db().lastPaste
+  if type(kept) == "table" and type(kept.text) == "string" and now() - (kept.at or 0) < 86400 then
+    edit:SetText(kept.text)
+    edit:HighlightText()
+    status:SetText(GREY .. "Your last paste (" .. ago(kept.at) .. ") is still here: Check carries on where you left off, or paste a new one.|r")
+  elseif last then
+    status:SetText(GREY .. "Last done: " .. last.title .. ", by " .. last.by .. ", " .. ago(last.at) .. ". /hamr done lists more.|r")
+  end
 end
 
 ns.addTab("raid", "Raid list", function() exportRaid() end)
 ns.addTab("roster", "Guild notes", function() exportRoster() end)
 ns.addTab("notes", "Update notes", function() if lastNotes then showNotes(lastNotes, lastSummary) else importNotes() end end)
 
-local lastTab = "raid"
+local options          -- below, with the options page
+local lastTab = "events"
 local function showTab(key)
-  if not ns.tabs[key] then key = "raid" end
+  if not ns.tabs[key] then key = "events" end
   lastTab = key
   db().lastTab = key
   ns.tabs[key]()
@@ -763,8 +880,54 @@ end
 ns.showTab = showTab
 
 local function toggleWindow()
-  if frame:IsShown() then frame:Hide() else showTab(lastTab) end
+  if frame:IsShown() then frame:Hide() else showTab(options().keepTab and lastTab or "events") end      -- Events, unless they keep the last tab
 end
+
+---------------------------------------------------------------------------------------------------------------------
+-- A HAMR tab on the side of the game's guild window, for Update notes. It's our own button that only sits beside it:
+-- nothing of the guild window is changed or called, so the game still lets that window save notes.
+
+local docked = {}
+local function dockTab(parentName)
+  local parent = _G[parentName]
+  if docked[parentName] or type(parent) ~= "table" or not parent.CreateTexture then return end
+  docked[parentName] = true
+  local b = CreateFrame("Button", nil, parent)
+  b:SetSize(36, 36)
+  b:SetPoint("BOTTOMLEFT", parent, "BOTTOMRIGHT", 0, 48)
+  local edge = b:CreateTexture(nil, "BACKGROUND", nil, -8)
+  edge:SetPoint("TOPLEFT", -1, 1)
+  edge:SetPoint("BOTTOMRIGHT", 1, -1)
+  edge:SetColorTexture(1, 0.82, 0, 0.6)
+  local back = b:CreateTexture(nil, "BACKGROUND")
+  back:SetAllPoints()
+  back:SetColorTexture(0.05, 0.05, 0.05, 0.95)
+  local icon = b:CreateTexture(nil, "ARTWORK")
+  icon:SetPoint("TOPLEFT", 3, -3)
+  icon:SetPoint("BOTTOMRIGHT", -3, 3)
+  icon:SetTexture(ICON)
+  local glow = b:CreateTexture(nil, "HIGHLIGHT")
+  glow:SetAllPoints()
+  glow:SetColorTexture(1, 0.82, 0, 0.2)
+  b:SetScript("OnClick", function()
+    if frame:IsShown() then frame:Hide() else showTab(options().keepTab and lastTab or "events") end
+  end)
+  b:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine("HAMR Tools")
+    GameTooltip:AddLine("Open or close HAMR", 1, 1, 1)
+    GameTooltip:AddLine("Drag the HAMR window beside this one; it stays where you put it.", 0.7, 0.7, 0.7, true)
+    GameTooltip:Show()
+  end)
+  b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
+local docker = CreateFrame("Frame")
+docker:RegisterEvent("PLAYER_LOGIN")
+docker:RegisterEvent("ADDON_LOADED")        -- the guild window loads when first opened on some clients
+docker:SetScript("OnEvent", function()
+  dockTab("GuildFrame")
+  dockTab("CommunitiesFrame")
+end)
 
 ---------------------------------------------------------------------------------------------------------------------
 -- The minimap button: the clan's crossed hammers. Click to open, drag it round the edge. Retail also lists the addon
@@ -785,6 +948,7 @@ local function settings()
   db()
   HAMRDB.minimap = type(HAMRDB.minimap) == "table" and HAMRDB.minimap or {}
   if type(HAMRDB.minimap.angle) ~= "number" then HAMRDB.minimap.angle = 205 end      -- lower left, clear of the clock and mail
+  if HAMRDB.minimap.hide == nil then HAMRDB.minimap.hide = true end     -- off at first: the tab on the guild window and /hamr open it
   return HAMRDB.minimap
 end
 
@@ -827,7 +991,7 @@ mini:SetScript("OnLeave", function() GameTooltip:Hide() end)
 -- Options: in the game's own Options > AddOns > HAMR, not in the HAMR window. Built from plain frames too: a slider
 -- here is a Slider with its own track and the game's long-standing thumb texture, so no template can go missing.
 
-local function options()
+options = function()
   local d = db()
   d.options = type(d.options) == "table" and d.options or {}
   local o = d.options
@@ -845,10 +1009,20 @@ local function applyOptions()
   end
   solid:SetAlpha(o.opacity * o.opacity)       -- solid at 100%, fading faster than the texture so low settings stay clear
   ns.locked = o.locked == true
+  ns.raidInvites = o.raidInvites ~= false          -- on unless turned off
+  ns.whisperInvites = o.whisperInvites ~= false
+  ns.guildChatInvites = o.guildChat ~= false
+  ns.outsiders = o.outsiders == true
+  local word = trim(tostring(o.keyword or "")):gsub("[^%w]", "")
+  ns.keyword = word ~= "" and word:sub(1, 12) or "RFD"
+  ns.hiddenTabs.raid = not o.raidTab
+  layoutTabs()
+  if ns.onOptions then ns.onOptions() end
   if settings().hide then mini:Hide() else mini:Show() end
 end
 
 local optionsPanel = CreateFrame("Frame")
+optionsPanel:Hide()          -- so the options window's first show of it counts as a show, and fills in the values
 optionsPanel.name = "HAMR"
 local refreshers = {}
 
@@ -857,7 +1031,10 @@ optTitle:SetPoint("TOPLEFT", 16, -16)
 optTitle:SetText("HAMR Tools")
 local optSub = optionsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 optSub:SetPoint("TOPLEFT", optTitle, "BOTTOMLEFT", 0, -6)
-optSub:SetText("Type /hamr, or click the hammers by the minimap, to open the window.")
+optSub:SetWidth(580)
+optSub:SetJustifyH("LEFT")
+optSub:SetText("Open HAMR with the HAMR tab on the right of the game's guild window, or type /hamr. It opens on Events. "
+               .. "These settings are yours alone: nothing here changes anything for other officers.")
 
 local function optSlider(y, label, low, high, step, get, set, shown)
   local s = CreateFrame("Slider", nil, optionsPanel)
@@ -911,16 +1088,64 @@ optSlider(-150, "Window size", 0.7, 1.4, 0.05, function() return options().scale
 optCheck(-190, "Show the button by the minimap", function() return not settings().hide end, function(on) settings().hide = not on end)
 optCheck(-220, "Lock the window in place", function() return options().locked == true end, function(on) options().locked = on end)
 optCheck(-250, "Open on the tab I used last, even after logging out", function() return options().keepTab == true end, function(on) options().keepTab = on end)
+optCheck(-280, "Show the Raid list tab", function() return options().raidTab == true end, function(on) options().raidTab = on end)
+optCheck(-320, "Raid invites on the Events tab (Rebuild, Invite missing); off leaves it to another addon",
+         function() return options().raidInvites ~= false end, function(on) options().raidInvites = on end)
+optCheck(-350, "Invite whoever whispers the keyword, while you track an event that has it ticked",
+         function() return options().whisperInvites ~= false end, function(on) options().whisperInvites = on end)
+optCheck(-380, "Also when they say the keyword in guild chat",
+         function() return options().guildChat ~= false end, function(on) options().guildChat = on end)
+optCheck(-410, "Also whispers from outside the guild (for testing)",
+         function() return options().outsiders == true end, function(on) options().outsiders = on end)
+
+-- The keyword: the tick beside each event, events named with it start ticked, and the whisper that asks for an invite.
+local keyLabel = optionsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+keyLabel:SetPoint("TOPLEFT", 20, -452)
+keyLabel:SetText("Keyword")
+local keyBox = CreateFrame("EditBox", nil, optionsPanel)
+keyBox:SetSize(110, 22)
+keyBox:SetPoint("LEFT", keyLabel, "RIGHT", 10, 0)
+keyBox:SetAutoFocus(false)
+keyBox:SetMaxLetters(12)
+keyBox:SetFontObject(ChatFontNormal)
+if keyBox.SetTextInsets then keyBox:SetTextInsets(6, 6, 0, 0) end
+local keyBack = keyBox:CreateTexture(nil, "BACKGROUND")
+keyBack:SetAllPoints()
+keyBack:SetColorTexture(0, 0, 0, 0.5)
+local keyNote = optionsPanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+keyNote:SetPoint("TOPLEFT", keyLabel, "BOTTOMLEFT", 0, -10)
+keyNote:SetWidth(560)
+keyNote:SetJustifyH("LEFT")
+keyNote:SetText("The tick's name beside each event, and the word people ask with. Letters and numbers; Enter keeps it; blank is RFD.")
+local function saveKeyword(self)
+  options().keyword = self:GetText()
+  applyOptions()
+  self:SetText(ns.keyword)
+  self:ClearFocus()
+end
+keyBox:SetScript("OnEnterPressed", saveKeyword)
+keyBox:SetScript("OnEditFocusLost", function(self) if self:GetText() ~= ns.keyword then saveKeyword(self) end end)
+keyBox:SetScript("OnEscapePressed", function(self) self:SetText(ns.keyword or "RFD"); self:ClearFocus() end)
+refreshers[#refreshers + 1] = function() keyBox:SetText(ns.keyword or "RFD") end
+
 local resetPos = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
 resetPos:SetSize(280, 24)
-resetPos:SetPoint("TOPLEFT", 20, -292)
+resetPos:SetPoint("TOPLEFT", 20, -512)
 resetPos:SetText("Put the window back in the middle")
 resetPos:SetScript("OnClick", function()
   if frame.SetUserPlaced then frame:SetUserPlaced(false) end
   frame:ClearAllPoints()
   frame:SetPoint("CENTER")
 end)
-optionsPanel:SetScript("OnShow", function() for _, refresh in ipairs(refreshers) do refresh() end end)
+-- Each control shows the saved value. One that fails doesn't stop the rest, and says why in chat (once).
+local refreshFailed
+local function refreshOptions()
+  for _, refresh in ipairs(refreshers) do
+    local ok, err = pcall(refresh)
+    if not ok and not refreshFailed then refreshFailed = true; say("Options couldn't show a setting: " .. tostring(err)) end
+  end
+end
+optionsPanel:SetScript("OnShow", refreshOptions)
 
 local optionsCategory
 local function registerOptions()
@@ -950,6 +1175,7 @@ loader:SetScript("OnEvent", function(self, event, name)
   placeButton()
   applyOptions()
   registerOptions()
+  refreshOptions()
   if options().keepTab and type(db().lastTab) == "string" then lastTab = db().lastTab end
   ns.startComms()
 end)
@@ -968,6 +1194,7 @@ SlashCmdList.HAMR = function(msg)
     local s = settings()
     s.hide = not s.hide
     if s.hide then mini:Hide(); say("Minimap button hidden. /hamr minimap brings it back.") else mini:Show() end
+    refreshOptions()
   elseif command == "welcome" then showTab("welcome")
   elseif command == "events" then showTab("events")
   elseif command == "options" then ns.openOptions()
@@ -978,10 +1205,10 @@ SlashCmdList.HAMR = function(msg)
   elseif command == "" then toggleWindow()
   else
     say("/hamr - open or close the window (or click the hammers by the minimap)")
-    say("/hamr events - the guild's events: open a raid for one, and copy its list for the site")
+    say("/hamr events - the guild's events: start one, track your raid, rebuild a raid, copy the list for the site")
     say("/hamr raid - copy who's in your raid or party, for an event's list")
     say("/hamr roster - copy everyone's tick notes, to check against the site")
-    say("/hamr notes - paste the site's totals and save the notes that changed, one at a time")
+    say("/hamr notes - paste the site's totals, then copy each new note into the guild window (also its HAMR tab)")
     say("/hamr welcome - the Onboarding tab, for talking with a recruit")
     say("/hamr done - which events' notes have been updated, and by whom")
     say("/hamr minimap - hide or show the minimap button")
@@ -992,6 +1219,7 @@ end
 -- What the addon's other files need from this one.
 ns.frame, ns.open, ns.status, ns.hint, ns.action, ns.second = frame, open, status, hint, action, second
 ns.showText = showText
+ns.applyOptions = applyOptions
 ns.sendAddon = sendAddon
 ns.say, ns.db, ns.now, ns.trim, ns.lower, ns.shortName = say, db, now, trim, lower, shortName
 ns.GAME, ns.ORANGE, ns.GREY, ns.GOLD, ns.GREEN = GAME, ORANGE, GREY, GOLD, GREEN

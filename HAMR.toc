@@ -2,7 +2,7 @@
 ## Title: HAMR
 ## Notes: Raid lists, shared guild events and tick notes for the HAMR Tools site, and notes for officers welcoming recruits.
 ## Author: Clan Battlehammer
-## Version: 0.6.0
+## Version: 0.7.0
 ## IconTexture: Interface\AddOns\HAMR\icon
 ## SavedVariables: HAMRDB
 ## AddonCompartmentFunc: HAMR_OnAddonCompartmentClick
