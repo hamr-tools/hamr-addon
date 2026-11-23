@@ -92,6 +92,11 @@ it's also in the minimap's addon menu. It opens on Events (or on the tab you use
     If the game ever stops addons inviting on their own, the button becomes **Invite next**, one per click.
     Using another addon for the invites? Turn **Raid invites** off in the options: the buttons go, HAMR stops
     turning parties into raids, and it still keeps the lists.
+  - **Invite all** (with the keyword ticked): for reforming on another layer. Invites everyone on the event who
+    isn't in your group, the latest raid's people first, into your raid (or a new one when you're not in a group),
+    until it's full. Offline guildies are skipped; anyone already in another raid comes back as "already in a group".
+  - **Raid assist by rank**: in a raid you lead and track, guildies of the options' rank (Herald unless changed)
+    and every rank above it get raid assist as they join. Nothing happens in a guild with no rank by that name.
   - **Who's on it**: everyone on the event, raid by raid, for anyone in the guild with the addon (officer or not).
   - **Copy for the site**: paste it into the event's "Who was there" on the site, like a raid list, or into
     Events › **Import from the addon** to make the site event from it, named after it (another officer's copy of the
@@ -99,6 +104,18 @@ it's also in the minimap's addon menu. It opens on Events (or on the tab you use
     back. **Delete** (only on events you made, on the character that made them, and only after a second click)
     removes it for everyone in the guild who has HAMR, names and all; it can't come back from someone else's copy. The Raid list tab still works on its own, if the shared events ever stop working. An addon that logs in
     late catches up from the others online.
+
+- **RFD** (named after the keyword; hidden when raid invites are off in the options): raid filling for the event
+  you track. Several officers can fill at once, one raid at a time: each one with **Fill raids for it** ticked (the
+  same as the keyword's tick on Events) tells the others how full their group is, and whoever says the keyword in
+  guild chat goes to the fullest raid that still has room. When that raid reaches 40, the next officer's takes over.
+  A whisper is always for the officer whispered. Nobody needs a group first: the first invite makes one, and it
+  becomes a raid as soon as someone accepts. When every raid is full, whoever asks goes on a **waiting list**
+  (for 10 minutes, in the order they asked) and is invited as soon as a raid has room: an officer reforms, someone
+  leaves, or another officer starts filling. An officer tracking the event without the tick also keeps a quiet
+  note of them, so ticking it later picks them up. The tab lists the officers filling, how full each raid is, whose
+  turn it is, the raid marker each raid leader put on themselves, and the last people who asked with what came of it (invited, joined, already in a group, another
+  officer's turn...).
 
 - **Onboarding**: for the officer talking with a recruit. **Nothing is sent for you**: the clan's recruiting is
   people talking to people. When a recruit whispers you, they're listed on the left with their race (orange when
@@ -131,7 +148,8 @@ While the window is open, "Show offline members" is on so everyone is listed; cl
 
 In the game's **Options › AddOns › HAMR** (or right-click the minimap button, or `/hamr options`): the window's
 background opacity and size, the minimap button on or off, locking the window in place, opening on the last tab
-used even after logging out (otherwise it opens on Events), the Raid list tab, raid invites on the Events tab, invites for the keyword (whispers, guild chat, whispers from outside the guild), the keyword itself (RFD unless changed), and putting the window back in the middle.
+used even after logging out (otherwise it opens on Events), the Raid list tab, raid invites on the Events tab, invites for the keyword (whispers, guild chat, whispers from outside the guild), raid assist by guild rank (on,
+Herald and above, unless changed), the keyword itself (RFD unless changed), and putting the window back in the middle.
 
 ## Commands
 

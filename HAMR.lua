@@ -247,12 +247,16 @@ ns.hiddenTabs = { raid = true }     -- the Raid list tab is off unless the optio
 
 -- Lines the tabs up left to right, leaving out hidden ones.
 local function layoutTabs()
+  local shown = 0
+  for _, key in ipairs(tabOrder) do if not ns.hiddenTabs[key] then shown = shown + 1 end end
+  local w = math.min(106, math.floor(556 / math.max(shown, 1)) - 4)       -- five at full width; six still fit
   local x = 0
   for _, key in ipairs(tabOrder) do
     local b = tabButtons[key]
     b:ClearAllPoints()
     if ns.hiddenTabs[key] then b:Hide() else
-      b:SetPoint("BOTTOMLEFT", divider, "TOPLEFT", x * 110, 0)
+      b:SetWidth(w)
+      b:SetPoint("BOTTOMLEFT", divider, "TOPLEFT", x * (w + 4), 0)
       b:Show()
       x = x + 1
     end
@@ -1013,6 +1017,8 @@ local function applyOptions()
   ns.whisperInvites = o.whisperInvites ~= false
   ns.guildChatInvites = o.guildChat ~= false
   ns.outsiders = o.outsiders == true
+  ns.autoAssist = o.autoAssist ~= false
+  ns.assistRank = (type(o.assistRank) == "string" and trim(o.assistRank) ~= "") and trim(o.assistRank):sub(1, 30) or "Herald"
   local word = trim(tostring(o.keyword or "")):gsub("[^%w]", "")
   ns.keyword = word ~= "" and word:sub(1, 12) or "RFD"
   ns.hiddenTabs.raid = not o.raidTab
@@ -1089,18 +1095,42 @@ optCheck(-190, "Show the button by the minimap", function() return not settings(
 optCheck(-220, "Lock the window in place", function() return options().locked == true end, function(on) options().locked = on end)
 optCheck(-250, "Open on the tab I used last, even after logging out", function() return options().keepTab == true end, function(on) options().keepTab = on end)
 optCheck(-280, "Show the Raid list tab", function() return options().raidTab == true end, function(on) options().raidTab = on end)
-optCheck(-320, "Raid invites on the Events tab (Rebuild, Invite missing); off leaves it to another addon",
+optCheck(-310, "Raid invites on the Events tab (Rebuild, Invite missing); off leaves it to another addon",
          function() return options().raidInvites ~= false end, function(on) options().raidInvites = on end)
-optCheck(-350, "Invite whoever whispers the keyword, while you track an event that has it ticked",
+optCheck(-338, "Invite whoever whispers the keyword, while you track an event that has it ticked",
          function() return options().whisperInvites ~= false end, function(on) options().whisperInvites = on end)
-optCheck(-380, "Also when they say the keyword in guild chat",
+optCheck(-366, "Also when they say the keyword in guild chat",
          function() return options().guildChat ~= false end, function(on) options().guildChat = on end)
-optCheck(-410, "Also whispers from outside the guild (for testing)",
+optCheck(-394, "Also whispers from outside the guild (for testing)",
          function() return options().outsiders == true end, function(on) options().outsiders = on end)
+
+-- Raid assist by rank: the rank's name, as this guild calls it (Herald by default); that rank and every one above it.
+optCheck(-422, "Raid assist for this guild rank and above, in raids you lead:",
+         function() return options().autoAssist ~= false end, function(on) options().autoAssist = on end)
+local rankBox = CreateFrame("EditBox", nil, optionsPanel)
+rankBox:SetSize(110, 22)
+rankBox:SetPoint("TOPLEFT", 470, -423)
+rankBox:SetAutoFocus(false)
+rankBox:SetMaxLetters(30)
+rankBox:SetFontObject(ChatFontNormal)
+if rankBox.SetTextInsets then rankBox:SetTextInsets(6, 6, 0, 0) end
+local rankBack = rankBox:CreateTexture(nil, "BACKGROUND")
+rankBack:SetAllPoints()
+rankBack:SetColorTexture(0, 0, 0, 0.5)
+local function saveRank(self)
+  options().assistRank = self:GetText()
+  applyOptions()
+  self:SetText(ns.assistRank)
+  self:ClearFocus()
+end
+rankBox:SetScript("OnEnterPressed", saveRank)
+rankBox:SetScript("OnEditFocusLost", function(self) if self:GetText() ~= ns.assistRank then saveRank(self) end end)
+rankBox:SetScript("OnEscapePressed", function(self) self:SetText(ns.assistRank or "Herald"); self:ClearFocus() end)
+refreshers[#refreshers + 1] = function() rankBox:SetText(ns.assistRank or "Herald") end
 
 -- The keyword: the tick beside each event, events named with it start ticked, and the whisper that asks for an invite.
 local keyLabel = optionsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-keyLabel:SetPoint("TOPLEFT", 20, -452)
+keyLabel:SetPoint("TOPLEFT", 20, -462)
 keyLabel:SetText("Keyword")
 local keyBox = CreateFrame("EditBox", nil, optionsPanel)
 keyBox:SetSize(110, 22)
@@ -1130,7 +1160,7 @@ refreshers[#refreshers + 1] = function() keyBox:SetText(ns.keyword or "RFD") end
 
 local resetPos = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
 resetPos:SetSize(280, 24)
-resetPos:SetPoint("TOPLEFT", 20, -512)
+resetPos:SetPoint("TOPLEFT", 20, -518)
 resetPos:SetText("Put the window back in the middle")
 resetPos:SetScript("OnClick", function()
   if frame.SetUserPlaced then frame:SetUserPlaced(false) end
