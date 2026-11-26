@@ -656,9 +656,25 @@ local function summary(run)
   return table.concat(parts, ", ")
 end
 
+-- Whoever asked and wasn't invited yet when a run stops (full, Stop, a Rebuild) goes back on everyone's waiting list,
+-- at the front: the officer with room invites them. Nobody who asked is dropped.
+local function returnAsks(run)
+  if not (run.e and run.e.status == "open") then return end
+  local back = {}
+  for i = #run.names, 1, -1 do
+    local n = run.names[i]
+    if run.fromAsk[n] then addWaiting(run.e, n, "waited", false, true); table.insert(back, 1, n) end
+  end
+  run.names = {}
+  if #back == 0 then return end
+  for _, m in ipairs(chunked("H\t" .. run.e.id .. "\t", back)) do send(m, "GUILD") end
+  ns.say(#back .. " who asked for " .. keyword() .. " weren't invited yet: they're back on the waiting list, for the next raid with room.")
+end
+
 local function stopInvites(why)
   local run = invites.run
   if not run then return end
+  returnAsks(run)
   invites.run = nil
   inviteFrame:Hide()
   ns.status:SetText((why and (why .. " ") or "") .. summary(run) .. ".")
@@ -718,19 +734,13 @@ local function inviteNext(fromClick)
     if not fromClick then return end
   end
   if not IsInGroup() and pendingFor(run.e) >= 4 then       -- a party holds five: wait for someone to accept
-    if GetTime() - run.lastSent > 60 then stopInvites(ORANGE .. "Nobody has accepted yet.|r") end
+    -- People who asked are worth waiting for (an invite not answered in 75 s stops counting, and the next go out).
+    local asked = false
+    for _, n in ipairs(run.names) do if run.fromAsk[n] then asked = true break end end
+    if not asked and GetTime() - run.lastSent > 60 then stopInvites(ORANGE .. "Nobody has accepted yet.|r") end
     return
   end
   if IsInRaid() and GetNumGroupMembers() >= RAID_MAX then
-    local back = {}
-    for i = #run.names, 1, -1 do           -- those who asked go back on everyone's waiting list, at the front
-      local n = run.names[i]
-      if run.fromAsk[n] then addWaiting(run.e, n, "waited", false, true); table.insert(back, 1, n) end
-    end
-    if #back > 0 then
-      for _, m in ipairs(chunked("H\t" .. run.e.id .. "\t", back)) do send(m, "GUILD") end
-      ns.say(#back .. " who asked for " .. keyword() .. " didn't fit: they're back on the waiting list, for the next raid with room.")
-    end
     stopInvites(ORANGE .. "The raid is full (" .. RAID_MAX .. ")" .. (#run.names > 0 and (": " .. #run.names .. " not invited, " .. table.concat(run.names, ", ", 1, math.min(#run.names, 6)) .. (#run.names > 6 and "..." or "")) or "") .. ".|r")
     return
   end

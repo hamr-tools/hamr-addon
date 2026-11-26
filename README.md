@@ -111,7 +111,10 @@ it's also in the minimap's addon menu. It opens on Events (or on the tab you use
   guild chat goes to the fullest raid that still has room. Invites not answered yet count as places taken, so when
   the 40th place is promised (not when the 40th person actually joins) the next officer's takes over, in the same
   second. An invite that's declined, or not answered for 75 seconds, frees its place again. Asks heard in the moment
-  a raid fills go on everyone's waiting list, so a rush doesn't lose anyone in the hand-over.
+  a raid fills go on everyone's waiting list, so a rush doesn't lose anyone in the hand-over. All an officer does
+  is **Track my raid** and tick the keyword: alone, HAMR has 4 invites out until someone accepts (a party holds 5),
+  then it's a raid and the rest follow; slower, but nobody who asked is ever dropped. Anyone not invited yet when
+  invites stop (Stop, a Rebuild) goes back on everyone's waiting list.
   A whisper is always for the officer whispered. Nobody needs a group first: the first invite makes one, and it
   becomes a raid as soon as someone accepts. When every raid is full, whoever asks goes on a **waiting list**
   (for 10 minutes, in the order they asked) and is invited as soon as a raid has room: an officer reforms, someone
