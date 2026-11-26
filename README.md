@@ -108,13 +108,16 @@ it's also in the minimap's addon menu. It opens on Events (or on the tab you use
 - **RFD** (named after the keyword; hidden when raid invites are off in the options): raid filling for the event
   you track. Several officers can fill at once, one raid at a time: each one with **Fill raids for it** ticked (the
   same as the keyword's tick on Events) tells the others how full their group is, and whoever says the keyword in
-  guild chat goes to the fullest raid that still has room. When that raid reaches 40, the next officer's takes over.
+  guild chat goes to the fullest raid that still has room. Invites not answered yet count as places taken, so when
+  the 40th place is promised (not when the 40th person actually joins) the next officer's takes over, in the same
+  second. An invite that's declined, or not answered for 75 seconds, frees its place again. Asks heard in the moment
+  a raid fills go on everyone's waiting list, so a rush doesn't lose anyone in the hand-over.
   A whisper is always for the officer whispered. Nobody needs a group first: the first invite makes one, and it
   becomes a raid as soon as someone accepts. When every raid is full, whoever asks goes on a **waiting list**
   (for 10 minutes, in the order they asked) and is invited as soon as a raid has room: an officer reforms, someone
   leaves, or another officer starts filling. An officer tracking the event without the tick also keeps a quiet
   note of them, so ticking it later picks them up. The tab lists the officers filling, how full each raid is, whose
-  turn it is, the raid marker each raid leader put on themselves, and the last people who asked with what came of it (invited, joined, already in a group, another
+  turn it is (with invites still out, e.g. "22 in, 18 invited: 40 / 40"), the raid marker each raid leader put on themselves, and the last people who asked with what came of it (invited, joined, already in a group, another
   officer's turn...).
 
 - **Onboarding**: for the officer talking with a recruit. **Nothing is sent for you**: the clan's recruiting is

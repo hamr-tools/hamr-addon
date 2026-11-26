@@ -14,8 +14,10 @@
 --   P  id  name,name*,...                                            people seen (* had raid assist): lists only grow
 --   R  id  raid  name,name,...                                       who was in one of its raids ("Name:time"): grows
 --   L  id  leader  count  raid                                       a tracked raid's size now (0: closed), every minute
---   F  id  officer  count  marker                                    an officer filling raids for it (-1: stopped)
+--   F  id  officer  count  marker  in                                an officer filling raids for it (-1: stopped):
+--                                                                      count is in the raid + invites out, in is in it
 --   W  id  name,name,...                                             taken off the waiting list (invited)
+--   H  id  name,name,...                                             asked, didn't fit in a full raid: waiting
 -- An addon that logs in asks with Q (HAMR.lua); the others whisper it what's open or changed lately. Messages go out
 -- through a queue, a few at once and then one a second; one the game reports as throttled waits and goes again.
 -- Invites go out one at a time, a little apart, and slow down if the game complains.
@@ -147,11 +149,33 @@ pump:SetScript("OnUpdate", function(self)
   if not queue[1] then self:Hide() end
 end)
 
+-- During a rush (dozens joining in a minute) every join adds a P and an R line: ones still waiting for the same list
+-- are merged, and an officer's F (which raid takes the next ask) goes ahead of everything, so the others hear at once.
 local function send(message, channel, target)
-  if message:sub(1, 2) == "L\t" then
+  local kind = message:sub(1, 2)
+  if kind == "L\t" then
     local key = message:match("^(L\t[^\t]*\t[^\t]*\t)")
     for i, m in ipairs(queue) do
       if m[2] == channel and m[1]:sub(1, #key) == key then queue[i] = { message, channel, target } return end
+    end
+  elseif kind == "F\t" then
+    local key = message:match("^(F\t[^\t]*\t)")
+    for i = #queue, 1, -1 do
+      if queue[i][2] == channel and queue[i][1]:sub(1, #key) == key then table.remove(queue, i) end
+    end
+    if not pump:IsShown() then refill() end
+    table.insert(queue, 1, { message, channel, target })
+    pump:Show()
+    return
+  elseif kind == "P\t" or kind == "R\t" then
+    local head, items = message:match(kind == "P\t" and "^(P\t[^\t]*\t)(.*)$" or "^(R\t[^\t]*\t[^\t]*\t)(.*)$")
+    if head and items ~= "" then
+      for i, m in ipairs(queue) do
+        if m[2] == channel and m[3] == target and m[1]:sub(1, #head) == head and #m[1] + 1 + #items <= MAX_MESSAGE then
+          queue[i] = { m[1] .. "," .. items, channel, target }
+          return
+        end
+      end
     end
   end
   if not pump:IsShown() then refill() end
@@ -348,6 +372,20 @@ local function waitingFor(e)
   return list
 end
 
+-- Invites out and not answered yet: they count toward the raid's 40 until they join, decline or are found in a group,
+-- or PENDING_FOR seconds pass (the game's invite box closes by itself before that). So when a rush of asks comes in,
+-- the next officer takes over as soon as the 40 places are spoken for, not when 40 have actually joined.
+local PENDING_FOR = 75
+local pending = {}          -- name key -> { name, at, id }
+local function unpend(name) pending[nameKey(name)] = nil end
+local function pendingFor(e)
+  local n, t = 0, GetTime()
+  for k, p in pairs(pending) do
+    if t - p.at > PENDING_FOR then pending[k] = nil elseif p.id == e.id then n = n + 1 end
+  end
+  return n
+end
+
 ---------------------------------------------------------------------------------------------------------------------
 -- Your tracked group: everyone in it goes on the event's list and its raid's, and its size goes out to everyone else.
 
@@ -434,7 +472,7 @@ local function scan(force)
   local fresh = addPeople(e, items, ns.now())
   table.sort(fresh)
   for _, m in ipairs(peopleLines(e, fresh)) do send(m, "GUILD") end
-  for _, name in ipairs(plain) do unwait(name) end
+  for _, name in ipairs(plain) do unwait(name); unpend(name) end
   local freshRaid = addToRaid(e.raids[key], plain)
   table.sort(freshRaid)
   for _, m in ipairs(raidLines(e, key, freshRaid)) do send(m, "GUILD") end
@@ -679,17 +717,20 @@ local function inviteNext(fromClick)
     run.wait = GetTime() + 1             -- the raid takes a moment to exist
     if not fromClick then return end
   end
-  if not IsInGroup() and run.outstanding >= 4 then         -- a party holds five: wait for someone to accept
+  if not IsInGroup() and pendingFor(run.e) >= 4 then       -- a party holds five: wait for someone to accept
     if GetTime() - run.lastSent > 60 then stopInvites(ORANGE .. "Nobody has accepted yet.|r") end
     return
   end
   if IsInRaid() and GetNumGroupMembers() >= RAID_MAX then
-    local back = 0
-    for i = #run.names, 1, -1 do           -- those who asked go back on the waiting list, at the front
+    local back = {}
+    for i = #run.names, 1, -1 do           -- those who asked go back on everyone's waiting list, at the front
       local n = run.names[i]
-      if run.fromAsk[n] then addWaiting(run.e, n, "waited", true, true); back = back + 1 end
+      if run.fromAsk[n] then addWaiting(run.e, n, "waited", false, true); table.insert(back, 1, n) end
     end
-    if back > 0 then ns.say(back .. " who asked for " .. keyword() .. " didn't fit: they're back on the waiting list.") end
+    if #back > 0 then
+      for _, m in ipairs(chunked("H\t" .. run.e.id .. "\t", back)) do send(m, "GUILD") end
+      ns.say(#back .. " who asked for " .. keyword() .. " didn't fit: they're back on the waiting list, for the next raid with room.")
+    end
     stopInvites(ORANGE .. "The raid is full (" .. RAID_MAX .. ")" .. (#run.names > 0 and (": " .. #run.names .. " not invited, " .. table.concat(run.names, ", ", 1, math.min(#run.names, 6)) .. (#run.names > 6 and "..." or "")) or "") .. ".|r")
     return
   end
@@ -702,7 +743,7 @@ local function inviteNext(fromClick)
   local ok = inviteCall(inviteName(name))
   if ok then
     run.counts.sent = (run.counts.sent or 0) + 1
-    run.outstanding = run.outstanding + 1
+    pending[nameKey(name)] = { name = name, at = GetTime(), id = run.e.id }
   end
   ns.status:SetText("Inviting " .. name .. " (" .. #run.names .. " left)")
   if draw then draw() end
@@ -714,7 +755,7 @@ local function startInvites(e, r, names, offline)
   if not rfdOn(e) then ns.status:SetText("Tick " .. keyword() .. " on the event to invite for it.") return end
   if not canInvite() then ns.status:SetText(ORANGE .. "Only the leader or an assistant can invite.|r") return end
   store().tied[me()], store().raid[me()] = e.id, r.key       -- whoever joins counts in this raid
-  invites.run = { e = e, raid = r, names = names, offline = offline, counts = {}, busy = {}, outstanding = 0,
+  invites.run = { e = e, raid = r, names = names, offline = offline, counts = {}, busy = {},
                   lastSent = GetTime(), wait = 0, gap = INVITE_GAP, fromAsk = {} }
   scan(true)
   if invites.byClick then
@@ -747,6 +788,10 @@ listen:SetScript("OnEvent", function(_, event, a, b)
       if who then
         local said = { joined = "joined", busy = "already in a group", declined = "declined", missing = "not found" }
         answerAsk(who, said[ans[2]])
+        if pending[nameKey(who)] then
+          unpend(who)
+          if ns.announceFill then ns.announceFill() end          -- a place may have opened
+        end
         break
       end
     end
@@ -758,6 +803,7 @@ listen:SetScript("OnEvent", function(_, event, a, b)
     end
     if run and a == "HAMR" and tostring(b):lower():find("invite") then
       invites.byClick = true            -- from now on, one invite per click
+      unpend(run.current)
       table.insert(run.names, 1, run.current)
       inviteFrame:Hide()
       ns.status:SetText(ORANGE .. "The game only lets addons invite on a click: press Invite next for each.|r")
@@ -772,6 +818,7 @@ listen:SetScript("OnEvent", function(_, event, a, b)
       run.retried = true
       table.insert(run.names, 1, run.current)
       run.counts.sent = math.max(0, (run.counts.sent or 1) - 1)
+      unpend(run.current)
       run.gap = math.min(3, run.gap * 2)
       run.wait = GetTime() + 2
     end
@@ -782,7 +829,6 @@ listen:SetScript("OnEvent", function(_, event, a, b)
     local who = text:match(ans[1])
     if who then
       if ans[2] == "busy" then run.busy[#run.busy + 1] = who else run.counts[ans[2]] = (run.counts[ans[2]] or 0) + 1 end
-      run.outstanding = math.max(0, run.outstanding - 1)        -- answered, one way or another
       run.retried = nil
       return
     end
@@ -814,12 +860,13 @@ end
 -- another and the next officer takes over when one is full. A whisper is for the officer whispered.
 local FILL_FRESH = 75
 local fillers = {}                -- event id -> name key -> { name, count, icon, at }
-local function setFiller(id, name, n, icon)
+local function setFiller(id, name, n, icon, inRaid)
   if not (id and name) then return end
   fillers[id] = fillers[id] or {}
-  icon = tonumber(icon)
+  icon, inRaid = tonumber(icon), tonumber(inRaid)
   if (tonumber(n) or -1) < 0 then fillers[id][nameKey(name)] = nil
-  else fillers[id][nameKey(name)] = { name = name, count = tonumber(n), icon = (icon and icon >= 1 and icon <= 8) and icon or nil, at = GetTime() } end
+  else fillers[id][nameKey(name)] = { name = name, count = tonumber(n), icon = (icon and icon >= 1 and icon <= 8) and icon or nil,
+                                      inRaid = inRaid, at = GetTime() } end
 end
 -- The marker (star, skull...) on your raid's leader: officers mark themselves so people can tell the raids apart.
 local function leaderIcon()
@@ -866,6 +913,12 @@ local function inviteAsker(e, name)
   if invites.run then invites.run.fromAsk[name] = true end
 end
 
+-- Your raid's places spoken for: who's in it (you, alone), invites out, and names still to invite for it.
+local function committed(e)
+  local run = invites.run
+  return (IsInGroup() and GetNumGroupMembers() or 1) + pendingFor(e) + ((run and run.e == e) and #run.names or 0)
+end
+
 -- Takes people off the waiting list while your raid has room: guild chat's when it's your turn, whispers to you always.
 local lastDrain = -100
 local function drainWaiting(e)
@@ -877,11 +930,12 @@ local function drainWaiting(e)
   if run and run.e ~= e then return end
   local duty = onDuty(e)
   local myTurn = duty and isMe(duty.name)
-  local room = RAID_MAX - math.max(1, IsInGroup() and GetNumGroupMembers() or 1) - (run and (#run.names + run.outstanding) or 0)
+  local room = RAID_MAX - committed(e)
   local here, taken = {}, {}
   for n in pairs(groupNow()) do here[nameKey(n)] = true end
   for _, w in ipairs(list) do
-    if here[nameKey(w.name)] then
+    local out = pending[nameKey(w.name)]
+    if here[nameKey(w.name)] or (out and out.id == e.id) then
       unwait(w.name)
     elseif room > 0 and (w.mine or myTurn) then
       unwait(w.name)
@@ -894,11 +948,13 @@ local function drainWaiting(e)
   if #taken > 0 then
     for _, m in ipairs(chunked("W\t" .. e.id .. "\t", taken)) do send(m, "GUILD") end
     ns.say("Inviting " .. #taken .. " from the waiting list for " .. e.title .. ": " .. table.concat(taken, ", ", 1, math.min(#taken, 6)) .. (#taken > 6 and "..." or "") .. ".")
+    if ns.announceFill then ns.announceFill() end          -- the places are spoken for: tell the others now
     if draw then draw() end
   end
 end
 
 local sentFill = { id = nil, n = -2, icon = 0, at = -100 }
+local filledAt = -100          -- when our raid's 40 places were last all spoken for
 local function announceFill(force)
   local e = amFilling()
   if sentFill.id and (not e or e.id ~= sentFill.id) then          -- stopped, or now filling another event
@@ -907,17 +963,38 @@ local function announceFill(force)
     sentFill = { id = nil, n = -2, icon = 0, at = -100 }
   end
   if not e then return end
-  local n = IsInGroup() and GetNumGroupMembers() or 0
+  local n = math.min(RAID_MAX, committed(e))
+  local inRaid = IsInGroup() and GetNumGroupMembers() or 0
   local icon = leaderIcon()
-  setFiller(e.id, me(), n, icon)
+  setFiller(e.id, me(), n, icon, inRaid)
   local t = GetTime()
-  if force or t - sentFill.at >= 30 or ((n ~= sentFill.n or icon ~= sentFill.icon) and t - sentFill.at >= 3) then
-    send(table.concat({ "F", e.id, me(), n, icon }, "\t"), "GUILD")
+  local turned = (n >= RAID_MAX) ~= (sentFill.n >= RAID_MAX)          -- just filled up, or has room again: say so now
+  if turned and n >= RAID_MAX then filledAt = t end
+  if force or turned or t - sentFill.at >= 30 or ((n ~= sentFill.n or icon ~= sentFill.icon) and t - sentFill.at >= 3) then
+    send(table.concat({ "F", e.id, me(), n, icon, inRaid }, "\t"), "GUILD")
     sentFill = { id = e.id, n = n, icon = icon, at = t }
   end
   drainWaiting(e)
 end
 ns.announceFill = announceFill
+
+-- The moment a raid fills up, the other officers take a second to hear it: a guild-chat ask in between would be
+-- skipped by them (still our turn, as far as they know) and by us (full). So whatever we skip in the HANDOVER seconds
+-- after filling goes out as H: on everyone's waiting list, invited by whoever has room. One who already invited them
+-- answers with W, so nobody keeps them.
+local HANDOVER = 3
+local handing = {}
+local function handOver(e, name)
+  addWaiting(e, name, "guild chat")
+  if not handing[1] then
+    C_Timer.After(1, function()
+      local list = handing
+      handing = {}
+      for _, m in ipairs(chunked("H\t" .. e.id .. "\t", list)) do send(m, "GUILD") end
+    end)
+  end
+  handing[#handing + 1] = name
+end
 
 local asked, lastWhy = {}, -100
 local function heard(text, sender, where)
@@ -953,17 +1030,23 @@ local function heard(text, sender, where)
     return
   end
   for n in pairs(groupNow()) do if nameKey(n) == nameKey(name) then noteAsk(name, where, "already in your raid") return end end
+  local out = pending[nameKey(name)]          -- asking again right after the invite: it's on its way (later: invite again)
+  if out and out.id == e.id and GetTime() - out.at < 20 then noteAsk(name, where, "invited by you, not answered yet") return end
   announceFill()
   if where == "guild chat" then              -- one officer takes it: the fullest raid with room
     local duty = onDuty(e)
-    if duty and nameKey(duty.name) ~= nameKey(me()) then noteAsk(name, where, duty.name .. "'s turn") return end
+    if duty and nameKey(duty.name) ~= nameKey(me()) then
+      noteAsk(name, where, duty.name .. "'s turn")
+      if GetTime() - filledAt < HANDOVER then handOver(e, name) end
+      return
+    end
   end
-  if IsInRaid() and GetNumGroupMembers() >= RAID_MAX then          -- guild chat gets here only when every raid is full
+  if committed(e) >= RAID_MAX then          -- guild chat gets here only when every raid is full (counting invites out)
     local duty = onDuty(e)
     addWaiting(e, name, where, where == "whisper")
     local n = #waitingFor(e)
     if where == "whisper" then
-      skip("your raid is full: they wait for room in it (" .. n .. " waiting)" .. (duty and ("; " .. duty.name .. " has room") or ""), "waiting for room in your raid")
+      skip("your raid is full (counting invites out): they wait for room in it (" .. n .. " waiting)" .. (duty and ("; " .. duty.name .. " has room") or ""), "waiting for room in your raid")
     else
       skip("every raid is full: they're on the waiting list (" .. n .. " waiting)", "waiting: every raid is full")
     end
@@ -976,6 +1059,7 @@ local function heard(text, sender, where)
   local fresh = not (invites.run and invites.run.e == e)
   inviteAsker(e, name)
   if fresh then ns.say(name .. " asked for " .. keyword() .. " (" .. where .. "): inviting them for " .. e.title .. ".") end
+  announceFill()          -- the place is spoken for: if that was the last one, the next officer takes over now
 end
 local listenAsk = CreateFrame("Frame")
 listenAsk:RegisterEvent("CHAT_MSG_WHISPER")
@@ -1026,9 +1110,25 @@ function ns.onEventMessage(p, channel, sender)
   elseif kind == "W" then                    -- another officer invited these from the waiting list
     for item in (p[3] or ""):gmatch("[^,]+") do unwait(ns.trim(item)) end
     changed = true
+  elseif kind == "H" then                    -- asked, but didn't fit in another officer's raid: our waiting list too
+    local e = events()[p[2] or ""]
+    if e and e.status == "open" then
+      local here, mine = {}, {}
+      for n in pairs(groupNow()) do here[nameKey(n)] = true end
+      for item in (p[3] or ""):gmatch("[^,]+") do
+        local n = ns.trim(item)
+        local out = pending[nameKey(n)]
+        if here[nameKey(n)] or (out and out.id == e.id) then mine[#mine + 1] = n          -- we invited them already
+        else addWaiting(e, n, "guild chat") end
+      end
+      for _, m in ipairs(chunked("W\t" .. e.id .. "\t", mine)) do send(m, "GUILD") end
+      local mine = amFilling()
+      if mine and mine.id == e.id then drainWaiting(mine) end
+      changed = true
+    end
   elseif kind == "F" then
     if events()[p[2] or ""] and (p[3] or "") ~= "" then
-      setFiller(p[2], clean(p[3], 40), tonumber(p[4]) or -1, p[5])
+      setFiller(p[2], clean(p[3], 40), tonumber(p[4]) or -1, p[5], p[6])
       changed = true
       local mine = amFilling()
       if mine and mine.id == p[2] then drainWaiting(mine) end        -- their raid filled up: our turn, maybe
@@ -1072,8 +1172,13 @@ local watcher = CreateFrame("Frame")
 watcher:RegisterEvent("GROUP_ROSTER_UPDATE")
 watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 watcher:RegisterEvent("RAID_TARGET_UPDATE")          -- the raid leader's marker, for the keyword's tab
+local wasGrouped = false
 watcher:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_ENTERING_WORLD" then prune() end
+  if wasGrouped and not IsInGroup() then          -- left the group: invites sent from it no longer count
+    for k in pairs(pending) do pending[k] = nil end
+  end
+  wasGrouped = IsInGroup()
   scan()
   if event ~= "RAID_TARGET_UPDATE" then promoteAssists() end
   announceFill()
@@ -1521,7 +1626,9 @@ local function drawFill()
     local duty = onDuty(e)
     for _, f in ipairs(fillersOf(e)) do
       local turn = duty == f
-      lines[#lines + 1] = iconText(f.icon) .. (turn and GREEN or (f.count >= RAID_MAX and GREY or "|cffffffff")) .. f.name .. "|r" .. GREY .. "   " .. f.count .. " / " .. RAID_MAX
+      local out = (f.inRaid and f.inRaid < f.count) and (f.count - math.max(1, f.inRaid)) or 0      -- invites out
+      lines[#lines + 1] = iconText(f.icon) .. (turn and GREEN or (f.count >= RAID_MAX and GREY or "|cffffffff")) .. f.name .. "|r" .. GREY .. "   "
+                          .. (out > 0 and (math.max(1, f.inRaid) .. " in, " .. out .. " invited: " .. f.count) or f.count) .. " / " .. RAID_MAX
                           .. (f.count >= RAID_MAX and "   full" or "") .. "|r" .. (turn and (GREEN .. "   filling now: guild chat asks go here|r") or "")
                           .. (isMe(f.name) and (GREY .. "   (you)|r") or "")
     end
